@@ -3,7 +3,7 @@
 #include <fcntl.h>      // For open()
 #include <sys/mman.h>   // For mmap(), munmap()
 #include <sys/stat.h>   // For fstat()
-#include <unistd.h>     // For close()
+#include <unistd.h>     // For getopt(), close()
 #include <errno.h>      // For errno
 #include <string.h>     // For strerror()
 #include <assert.h>     // For assert()
@@ -50,7 +50,8 @@ struct token {
 };
 
 struct context {
-    char *file_path;
+    FILE *output_file;
+    char *input_file_path;
     char *src;
     size_t src_len;
     size_t src_idx;
@@ -217,7 +218,7 @@ expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
         " --> %s:%zu:%zu\n"
         "  |\n"
         "  | %.*s\n",
-        TOKEN_NAMES[tok.kind], ctx->file_path, tok.line, tok.col,
+        TOKEN_NAMES[tok.kind], ctx->input_file_path, tok.line, tok.col,
         (int)token_line.len, token_line.ptr
     );
     fprintf(stderr, "  | ");
@@ -259,7 +260,7 @@ do_literal(struct context *ctx) {
     expect(ctx, TOKEN_LITERAL, &tok);
     char *lit = ctx->src + tok.idx;
     size_t lit_len = tok.len;
-    printf("\tmov\tw0, #%.*s\n", (int)lit_len, lit);
+    fprintf(ctx->output_file, "\tmov\tw0, #%.*s\n", (int)lit_len, lit);
 }
 
 static void
@@ -269,7 +270,7 @@ do_fn_call(struct context *ctx) {
     expect(ctx, TOKEN_IDENT, &tok);
     char *name = ctx->src + tok.idx;
     size_t name_len = tok.len;
-    printf("\tbl\t_%.*s\n", (int)name_len, name);
+    fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
     expect(ctx, TOKEN_LEFT_PAREN, NULL);
     expect(ctx, TOKEN_RIGHT_PAREN, NULL);
 }
@@ -300,7 +301,7 @@ do_fn_def(struct context *ctx) {
     expect(ctx, TOKEN_IDENT, &tok);
     char *name = ctx->src + tok.idx;
     size_t name_len = tok.len;
-    printf(
+    fprintf(ctx->output_file,
         "\n"
         "\t.globl\t_%.*s\n"
         "\t.p2align\t2\n"
@@ -317,7 +318,7 @@ do_fn_def(struct context *ctx) {
     expect(ctx, TOKEN_IDENT, &tok);
     // TODO: intern the type, and pass it into do_block to type check
     do_block(ctx);
-    printf(
+    fprintf(ctx->output_file,
         "\n"
         "\tldp\tx29, x30, [sp], #16\n"
         "\tret\n"
@@ -327,7 +328,7 @@ do_fn_def(struct context *ctx) {
 
 static void
 do_program(struct context *ctx) {
-    printf(
+    fprintf(ctx->output_file,
         "\t.section\t__TEXT,__text,regular,pure_instructions\n"
     );
     // EBNF: program = { fn_def } EOF ;
@@ -340,56 +341,108 @@ do_program(struct context *ctx) {
     }
 }
 
+char *
+get_default_output_file_path(const char *input_file_path) {
+    // Find the last dot in input_file_path
+    char *dot = strrchr(input_file_path, '.');
+    // Calculate the length of the base name
+    size_t base_len = dot ? (size_t)(dot - input_file_path) : strlen(input_file_path);
+    // Allocate memory for the new file path
+    char *output_file_path = malloc(base_len + 3); // +3 for `.s\0`
+    if (!output_file_path) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+    // Copy the base name
+    strncpy(output_file_path, input_file_path, base_len);
+    output_file_path[base_len] = '\0';
+    // Append the new extension
+    strcat(output_file_path, ".s");
+    return output_file_path;
+}
+
 int
 main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s FILE\n", argv[0]);
+    // Parse command line options
+    int opt;
+    char *output_file_path = NULL;
+    while ((opt = getopt(argc, argv, "o:")) != -1) {
+        switch(opt) {
+            case 'o':
+                output_file_path = optarg;
+                break;
+            case '?':
+                // getopt already prints an error message for unknown options
+                fprintf(stderr, "Usage: %s [-o OUT_FILE] FILE\n", argv[0]);
+                exit(EXIT_FAILURE);
+            default:
+                assert(0);
+        }
+    }
+    // After option parsing, optind is the index of the first non-option argument
+    if (optind >= argc) {
+        fprintf(stderr, "Expected FILE argument after options\n");
+        fprintf(stderr, "Usage: %s [-o OUT_FILE] FILE\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    char *file_path = argv[1];
+    char *input_file_path = argv[optind];
+    if (output_file_path == NULL) {
+        output_file_path = get_default_output_file_path(input_file_path);
+    }
 
-    // Open the file
-    int fd = open(file_path, O_RDONLY);
+    // Open the input file
+    int fd = open(input_file_path, O_RDONLY);
     if (fd == -1) {
-        fprintf(stderr, "Error opening file '%s': %s\n", file_path, strerror(errno));
+        fprintf(stderr, "Error opening file '%s': %s\n", input_file_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    // Get the file size
+    // Get the input file size
     struct stat sb;
     if (fstat(fd, &sb) == -1) {
-        fprintf(stderr, "Error getting file size for '%s': %s\n", file_path, strerror(errno));
-        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", file_path, strerror(errno)); }
+        fprintf(stderr, "Error getting file size for '%s': %s\n", input_file_path, strerror(errno));
+        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno)); }
         exit(EXIT_FAILURE);
     }
     if (sb.st_size == 0) {
-        fprintf(stderr, "Error: file '%s' is empty.\n", file_path);
-        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", file_path, strerror(errno)); }
+        fprintf(stderr, "Error: file '%s' is empty.\n", input_file_path);
+        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno)); }
         exit(EXIT_FAILURE);
     }
     size_t file_size = sb.st_size;
 
-    // Memory-map the file
+    // Memory-map the input file
     void *mapped = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (mapped == MAP_FAILED) {
-        fprintf(stderr, "Error mapping file '%s': %s\n", file_path, strerror(errno));
-        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", file_path, strerror(errno)); }
+        fprintf(stderr, "Error mapping file '%s': %s\n", input_file_path, strerror(errno));
+        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno)); }
         exit(EXIT_FAILURE);
     }
     if (close(fd) == -1) {
-        fprintf(stderr, "Error closing file '%s': %s\n", file_path, strerror(errno));
+        fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno));
         // Continue even if close fails
     }
 
+    // Open the output file
+    FILE *output_file = fopen(output_file_path, "w");
+
     struct context ctx = {
-        .file_path = file_path,
+        .output_file = output_file,
+        .input_file_path = input_file_path,
         .src = (char *)mapped,
         .src_len = file_size,
     };
     do_program(&ctx);
 
+    // Close the output file
+    if (fclose(output_file) == EOF) {
+        fprintf(stderr, "Error closing file '%s': %s\n", output_file_path, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // Unmap the input file
     if (munmap(mapped, file_size) == -1) {
-        fprintf(stderr, "Error unmapping file '%s': %s\n", file_path, strerror(errno));
+        fprintf(stderr, "Error unmapping file '%s': %s\n", input_file_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
     return 0;

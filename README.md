@@ -48,7 +48,8 @@ digit = "0" .. "9" ;
 - [x] minimal single-pass-compiled and running program (main function returning a literal)
 - [x] support parameter-free function calls
 - [x] improve syntax error messages
-- [ ] add `-o` argument; by default, write to input file path with extension replaced by `.s`
+- [x] add `-o` argument; by default, write to input file path with extension replaced by `.s`
+- [ ] write to tmp file then move into place on success?
 - [ ] properly handle `_` in integer literals
 - [ ] comments
 - [ ] arithmetic

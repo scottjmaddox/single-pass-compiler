@@ -32,6 +32,6 @@ examples/%-c.s: examples/%.c
 	clang -S -o $@ $<
 
 examples/%-spl.s: examples/%.spl spc
-	./spc $< > $@
+	./spc -o $@ $<
 
 examples/%.spl:
