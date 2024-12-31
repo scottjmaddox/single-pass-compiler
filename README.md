@@ -57,7 +57,7 @@ echo $? # should output 42
 
 - [x] minimal single-pass-compiled and running program (main function returning a literal)
 - [x] support parameter-free function calls
-- [ ] improve syntax error message
+- [x] improve syntax error messages
 - [ ] comments
 - [ ] arithmetic
 - [ ] local variables
