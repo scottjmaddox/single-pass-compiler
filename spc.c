@@ -255,7 +255,7 @@ expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
 }
 
 static void
-do_literal(struct context *ctx) {
+compile_literal(struct context *ctx) {
     struct token tok;
     expect(ctx, TOKEN_LITERAL, &tok);
     char *lit = ctx->src + tok.idx;
@@ -264,7 +264,7 @@ do_literal(struct context *ctx) {
 }
 
 static void
-do_fn_call(struct context *ctx) {
+compile_fn_call(struct context *ctx) {
     // EBNF: fn_call = ident "(" ")" ;
     struct token tok;
     expect(ctx, TOKEN_IDENT, &tok);
@@ -276,25 +276,25 @@ do_fn_call(struct context *ctx) {
 }
 
 static void
-do_expr(struct context *ctx) {
+compile_expr(struct context *ctx) {
     // EBNF: expr = fn_call | literal ;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_IDENT: do_fn_call(ctx); break;
-    case TOKEN_LITERAL: do_literal(ctx); break;
+    case TOKEN_IDENT: compile_fn_call(ctx); break;
+    case TOKEN_LITERAL: compile_literal(ctx); break;
     default: expected(ctx, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
     }
 }
 
 static void
-do_block(struct context *ctx) {
+compile_block(struct context *ctx) {
     // EBNF: block = "{" expr "}" ;
     expect(ctx, TOKEN_LEFT_BRACE, NULL);
-    do_expr(ctx);
+    compile_expr(ctx);
     expect(ctx, TOKEN_RIGHT_BRACE, NULL);
 }
 
 static void
-do_fn_def(struct context *ctx) {
+compile_fn_def(struct context *ctx) {
     // EBNF: fn_def = "fn" ident "(" ")" "->" ident block ;
     struct token tok;
     expect(ctx, TOKEN_KEYWORD_FN, NULL);
@@ -316,8 +316,8 @@ do_fn_def(struct context *ctx) {
     expect(ctx, TOKEN_RIGHT_PAREN, NULL);
     expect(ctx, TOKEN_RIGHT_ARROW, NULL);
     expect(ctx, TOKEN_IDENT, &tok);
-    // TODO: intern the type, and pass it into do_block to type check
-    do_block(ctx);
+    // TODO: intern the type, and pass it into compile_block to type check
+    compile_block(ctx);
     fprintf(ctx->output_file,
         "\n"
         "\tldp\tx29, x30, [sp], #16\n"
@@ -327,14 +327,14 @@ do_fn_def(struct context *ctx) {
 }
 
 static void
-do_program(struct context *ctx) {
+compile_program(struct context *ctx) {
+    // EBNF: program = { fn_def } EOF ;
     fprintf(ctx->output_file,
         "\t.section\t__TEXT,__text,regular,pure_instructions\n"
     );
-    // EBNF: program = { fn_def } EOF ;
     for (;;) {
         switch (peek_token_kind(ctx)) {
-        case TOKEN_KEYWORD_FN: do_fn_def(ctx); break;
+        case TOKEN_KEYWORD_FN: compile_fn_def(ctx); break;
         case TOKEN_EOF: return;
         default: expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
         }
@@ -432,7 +432,7 @@ main(int argc, char *argv[]) {
         .src = (char *)mapped,
         .src_len = file_size,
     };
-    do_program(&ctx);
+    compile_program(&ctx);
 
     // Close the output file
     if (fclose(output_file) == EOF) {
