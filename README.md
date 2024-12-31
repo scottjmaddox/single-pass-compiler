@@ -11,6 +11,7 @@ program = fn_def ;
 fn_def = "fn" ident "(" ")" "->" ident block ;
 block = "{" expr "}" ;
 expr = literal ;
+
 ident = ident_start { ident_rest } ;
 literal = literal_start { literal_rest } ;
 

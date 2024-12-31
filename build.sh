@@ -1,4 +1,4 @@
 #!/bin/sh
 set -ex
 
-clang -Weverything -Wno-gnu-case-range -Wno-poison-system-directories -o main main.c
+clang -std=c99 -pedantic -Wall -Wno-gnu-case-range -o main main.c
