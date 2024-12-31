@@ -9,7 +9,7 @@
 #include <assert.h>     // For assert()
 
 #define MAX_TOKEN_LOOKAHEAD 2
-#define MAX_LITERAL_LEN 256
+#define MAX_INT_LITERAL_LEN 64
 
 enum TOKEN {
     TOKEN_EOF = 0,
@@ -210,16 +210,13 @@ get_token_line(struct context *ctx, struct token tok) {
 }
 
 static void
-expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
-    struct token tok;
-    take_token(ctx, &tok);
+eprint_token_line(struct context *ctx, struct token tok) {
     struct str token_line = get_token_line(ctx, tok);
     fprintf(stderr,
-        "error: unexpected token %s\n"
         " --> %s:%zu:%zu\n"
         "  |\n"
         "  | %.*s\n",
-        TOKEN_NAMES[tok.kind], ctx->input_file_path, tok.line, tok.col,
+        ctx->input_file_path, tok.line, tok.col,
         (int)token_line.len, token_line.ptr
     );
     fprintf(stderr, "  | ");
@@ -232,6 +229,14 @@ expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
     }
     for (size_t i = 0; i < tok.len; i++) { fputc('^', stderr); }
     fprintf(stderr, "\n");
+}
+
+static void
+expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
+    struct token tok;
+    take_token(ctx, &tok);
+    fprintf(stderr, "error: unexpected token %s\n", TOKEN_NAMES[tok.kind]);
+    eprint_token_line(ctx, tok);
     fprintf(stderr, "Expected one of: ");
     for (size_t i = 0; i < token_kinds_len; i++) {
         fprintf(stderr, "%s", TOKEN_NAMES[token_kinds[i]]);
@@ -255,23 +260,35 @@ expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
     }
 }
 
-size_t // out_len
-remove_underscores(char *in, size_t in_len, char *out, size_t out_cap) {
+int // 0 on success, -1 on buffer overflow
+remove_underscores(char *in, size_t in_len, char *out, size_t out_cap, size_t *out_len) {
     size_t j = 0;
-    for (size_t i = 0; i < in_len && j < out_cap; i++) {
+    for (size_t i = 0; i < in_len; i++) {
         if (in[i] != '_') {
-            out[j++] = in[i];
+            if (j < out_cap) {
+                out[j++] = in[i];
+            } else {
+                return -1;
+            }
         }
     }
-    return j;
+    *out_len = j;
+    return 0;
 }
 
 static void
 compile_literal(struct context *ctx) {
     struct token tok;
     expect(ctx, TOKEN_LITERAL, &tok);
-    char lit[MAX_LITERAL_LEN];
-    size_t lit_len = remove_underscores(ctx->src + tok.idx, tok.len, lit, MAX_LITERAL_LEN);
+    char lit[MAX_INT_LITERAL_LEN];
+    size_t lit_len;
+    if (remove_underscores(ctx->src + tok.idx, tok.len, lit, MAX_INT_LITERAL_LEN, &lit_len) == -1) {
+        fprintf(stderr, "error: integer literal too long\n");
+        eprint_token_line(ctx, tok);
+        fprintf(stderr, "Maximum allowed length: %d\n", MAX_INT_LITERAL_LEN);
+        fprintf(stderr, "Actual length: %zu\n", tok.len);
+        exit(EXIT_FAILURE);
+    }
     fprintf(ctx->output_file, "\tmov\tw0, #%.*s\n", (int)lit_len, lit);
 }
 

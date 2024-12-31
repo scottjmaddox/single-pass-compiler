@@ -1,4 +1,5 @@
 /spc
+*.s
 /examples/*
 !/examples/*.c
 !/examples/*.spl
