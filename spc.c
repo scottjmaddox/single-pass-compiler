@@ -24,7 +24,7 @@ enum TOKEN {
     TOKEN_UNKNOWN,
 };
 
-static char *TOKEN_STRING[] = {
+static char *TOKEN_NAMES[] = {
     "EOF",
     "LEFT_PAREN",
     "RIGHT_PAREN",
@@ -37,13 +37,20 @@ static char *TOKEN_STRING[] = {
     "UNKNOWN",
 };
 
-struct Token {
+struct token {
     enum TOKEN kind;
     size_t start_src_pos;
     size_t end_src_pos;
 };
 
-struct Lexer {
+struct token_diagnostics {
+    size_t start_src_line;
+    size_t start_src_col;
+    char *line;
+    size_t line_len;
+};
+
+struct context {
     char *file_path;
     char *src;
     size_t src_len;
@@ -57,34 +64,34 @@ struct Lexer {
 };
 
 static void
-Lexer_init(struct Lexer *lexer, char *file_path, char *src, size_t src_len) {
-    lexer->file_path = file_path;
-    lexer->src = src;
-    lexer->src_len = src_len;
-    lexer->src_pos = 0;
-    lexer->token_offset = 0;
-    lexer->token_count = 0;
+init_context(struct context *ctx, char *file_path, char *src, size_t src_len) {
+    ctx->file_path = file_path;
+    ctx->src = src;
+    ctx->src_len = src_len;
+    ctx->src_pos = 0;
+    ctx->token_offset = 0;
+    ctx->token_count = 0;
 }
 
 static void
-Lexer_push_back(struct Lexer *lexer, enum TOKEN token_kind, size_t token_start_src_pos, size_t token_end_src_pos) {
-    assert(lexer->token_count < MAX_TOKEN_LOOKAHEAD);
-    size_t i = (lexer->token_offset + lexer->token_count) % MAX_TOKEN_LOOKAHEAD;
-    lexer->token_kinds[i] = token_kind;
-    lexer->token_start_src_pos[i] = token_start_src_pos;
-    lexer->token_end_src_pos[i] = token_end_src_pos;
-    lexer->token_count += 1;
+push_token(struct context *ctx, enum TOKEN token_kind, size_t token_start_src_pos, size_t token_end_src_pos) {
+    assert(ctx->token_count < MAX_TOKEN_LOOKAHEAD);
+    size_t i = (ctx->token_offset + ctx->token_count) % MAX_TOKEN_LOOKAHEAD;
+    ctx->token_kinds[i] = token_kind;
+    ctx->token_start_src_pos[i] = token_start_src_pos;
+    ctx->token_end_src_pos[i] = token_end_src_pos;
+    ctx->token_count += 1;
 }
 
 static void
-Lexer_fill(struct Lexer *lexer) {
-    char *src = lexer->src;
-    size_t src_len = lexer->src_len;
-    size_t i = lexer->src_pos;
+fill_tokens(struct context *ctx) {
+    char *src = ctx->src;
+    size_t src_len = ctx->src_len;
+    size_t i = ctx->src_pos;
     size_t start;
-    while (lexer->token_count < MAX_TOKEN_LOOKAHEAD) {
+    while (ctx->token_count < MAX_TOKEN_LOOKAHEAD) {
         if (i >= src_len) {
-            Lexer_push_back(lexer, TOKEN_EOF, i, i);
+            push_token(ctx, TOKEN_EOF, i, i);
             continue;
         }
         start = i;
@@ -109,28 +116,28 @@ Lexer_fill(struct Lexer *lexer) {
             break;
         case '(':
             i += 1;
-            Lexer_push_back(lexer, TOKEN_LEFT_PAREN, start, i);
+            push_token(ctx, TOKEN_LEFT_PAREN, start, i);
             break;
         case ')':
             i += 1;
-            Lexer_push_back(lexer, TOKEN_RIGHT_PAREN, start, i);
+            push_token(ctx, TOKEN_RIGHT_PAREN, start, i);
             break;
         case '{':
             i += 1;
-            Lexer_push_back(lexer, TOKEN_LEFT_BRACE, start, i);
+            push_token(ctx, TOKEN_LEFT_BRACE, start, i);
             break;
         case '}':
             i += 1;
-            Lexer_push_back(lexer, TOKEN_RIGHT_BRACE, start, i);
+            push_token(ctx, TOKEN_RIGHT_BRACE, start, i);
             break;
         case '-':
             i += 1;
             if (i < src_len && src[i] == '>') {
                 i += 1;
-                Lexer_push_back(lexer, TOKEN_RIGHT_ARROW, start, i);
+                push_token(ctx, TOKEN_RIGHT_ARROW, start, i);
                 break;
             }
-            Lexer_push_back(lexer, TOKEN_UNKNOWN, start, i);
+            push_token(ctx, TOKEN_UNKNOWN, start, i);
             break;
         case '_':
         case 'A' ... 'Z':
@@ -151,12 +158,12 @@ Lexer_fill(struct Lexer *lexer) {
             switch (i - start) {
             case 2:
                 if (src[start] == 'f' && src[start + 1] == 'n') {
-                    Lexer_push_back(lexer, TOKEN_KEYWORD_FN, start, i);
+                    push_token(ctx, TOKEN_KEYWORD_FN, start, i);
                     break;
                 }
                 // fallthrough
             default:
-                Lexer_push_back(lexer, TOKEN_IDENT, start, i);
+                push_token(ctx, TOKEN_IDENT, start, i);
                 break;
             }
             break;
@@ -172,7 +179,7 @@ Lexer_fill(struct Lexer *lexer) {
                 }
                 break;
             }
-            Lexer_push_back(lexer, TOKEN_LITERAL, start, i);
+            push_token(ctx, TOKEN_LITERAL, start, i);
             break;
         default:
             i += 1;
@@ -200,55 +207,48 @@ Lexer_fill(struct Lexer *lexer) {
                 }
                 break;
             }
-            Lexer_push_back(lexer, TOKEN_UNKNOWN, start, i);
+            push_token(ctx, TOKEN_UNKNOWN, start, i);
             break;
         }
     }
-    lexer->src_pos = i;
+    ctx->src_pos = i;
 }
 
 static void
-Lexer_take(struct Lexer *lexer, struct Token* token) {
-    if (lexer->token_count == 0) { Lexer_fill(lexer); }
-    size_t i = lexer->token_offset;
-    token->kind = lexer->token_kinds[i];
-    token->start_src_pos = lexer->token_start_src_pos[i];
-    token->end_src_pos = lexer->token_end_src_pos[i];
-    lexer->token_offset = (i + 1) % MAX_TOKEN_LOOKAHEAD;
-    lexer->token_count -= 1;
+take_token(struct context *ctx, struct token* token) {
+    if (ctx->token_count == 0) { fill_tokens(ctx); }
+    size_t i = ctx->token_offset;
+    token->kind = ctx->token_kinds[i];
+    token->start_src_pos = ctx->token_start_src_pos[i];
+    token->end_src_pos = ctx->token_end_src_pos[i];
+    ctx->token_offset = (i + 1) % MAX_TOKEN_LOOKAHEAD;
+    ctx->token_count -= 1;
 }
 
 // static enum TOKEN
-// Lexer_peek_at(struct Lexer *lexer, size_t i) {
+// peek_token_kind_at(struct context *ctx, size_t i) {
 //     assert(i < MAX_TOKEN_LOOKAHEAD);
-//     if (i >= lexer->token_count) { Lexer_fill(lexer); }
-//     return lexer->token_kinds[(lexer->token_offset + i) % MAX_TOKEN_LOOKAHEAD];
+//     if (i >= ctx->token_count) { fill_tokens(ctx); }
+//     return ctx->token_kinds[(ctx->token_offset + i) % MAX_TOKEN_LOOKAHEAD];
 // }
 
 static enum TOKEN
-Lexer_peek(struct Lexer *lexer) {
-    if (lexer->token_count == 0) { Lexer_fill(lexer); }
-    return lexer->token_kinds[lexer->token_offset];
+peek_token_kind(struct context *ctx) {
+    if (ctx->token_count == 0) { fill_tokens(ctx); }
+    return ctx->token_kinds[ctx->token_offset];
 }
 
-struct Diagnostics {
-    size_t start_src_line;
-    size_t start_src_col;
-    char *line;
-    size_t line_len;
-};
-
-static struct Diagnostics
-Lexer_diagnostics(struct Lexer *lexer, struct Token token) {
-    struct Diagnostics diag = {
+static struct token_diagnostics
+get_token_diagnostics(struct context *ctx, struct token tok) {
+    struct token_diagnostics diag = {
         .start_src_line = 1,
         .start_src_col = 1,
         .line = NULL,
         .line_len = 0,
     };
     size_t line_start_pos = 0;
-    for (size_t i = 0; i < token.start_src_pos; i++) {
-        switch (lexer->src[i]) {
+    for (size_t i = 0; i < tok.start_src_pos; i++) {
+        switch (ctx->src[i]) {
         case '\n':
             diag.start_src_line += 1;
             diag.start_src_col = 1;
@@ -261,25 +261,25 @@ Lexer_diagnostics(struct Lexer *lexer, struct Token token) {
     }
 
     size_t line_end_pos = line_start_pos;
-    while (line_end_pos < lexer->src_len && lexer->src[line_end_pos] != '\n') {
+    while (line_end_pos < ctx->src_len && ctx->src[line_end_pos] != '\n') {
         line_end_pos += 1;
     }
-    diag.line = lexer->src + line_start_pos;
+    diag.line = ctx->src + line_start_pos;
     diag.line_len = line_end_pos - line_start_pos;
     return diag;
 }
 
 static void
-expected(struct Lexer *lexer, enum TOKEN *token_kinds, size_t token_kinds_len) {
-    struct Token token;
-    Lexer_take(lexer, &token);
-    struct Diagnostics diag = Lexer_diagnostics(lexer, token);
+expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
+    struct token tok;
+    take_token(ctx, &tok);
+    struct token_diagnostics diag = get_token_diagnostics(ctx, tok);
     fprintf(stderr,
         "error: unexpected token %s\n"
         " --> %s:%zu:%zu\n"
         "  |\n"
         "  | %.*s\n",
-        TOKEN_STRING[token.kind], lexer->file_path, diag.start_src_line, diag.start_src_col,
+        TOKEN_NAMES[tok.kind], ctx->file_path, diag.start_src_line, diag.start_src_col,
         (int)diag.line_len, diag.line
     );
     fprintf(stderr, "  | ");
@@ -290,11 +290,11 @@ expected(struct Lexer *lexer, enum TOKEN *token_kinds, size_t token_kinds_len) {
             fputc(' ', stderr);
         }
     }
-    for (size_t i = 0; i < token.end_src_pos - token.start_src_pos; i++) { fputc('^', stderr); }
+    for (size_t i = 0; i < tok.end_src_pos - tok.start_src_pos; i++) { fputc('^', stderr); }
     fprintf(stderr, "\n");
     fprintf(stderr, "Expected one of: ");
     for (size_t i = 0; i < token_kinds_len; i++) {
-        fprintf(stderr, "%s", TOKEN_STRING[token_kinds[i]]);
+        fprintf(stderr, "%s", TOKEN_NAMES[token_kinds[i]]);
         if (i < token_kinds_len - 1) {
             fprintf(stderr, ", ");
         }
@@ -304,64 +304,64 @@ expected(struct Lexer *lexer, enum TOKEN *token_kinds, size_t token_kinds_len) {
 }
 
 static void
-expect(struct Lexer *lexer, enum TOKEN token_kind, struct Token *token_out) {
-    struct Token token;
-    Lexer_take(lexer, &token);
-    if (token.kind != token_kind) {
-        expected(lexer, &token_kind, 1);
+expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
+    struct token tok;
+    take_token(ctx, &tok);
+    if (tok.kind != token_kind) {
+        expected(ctx, &token_kind, 1);
     }
-    if (token_out != NULL) {
-        *token_out = token;
+    if (tok_out != NULL) {
+        *tok_out = tok;
     }
 }
 
 static void
-do_literal(struct Lexer *lexer) {
-    struct Token token;
-    expect(lexer, TOKEN_LITERAL, &token);
-    char *lit = lexer->src + token.start_src_pos;
-    size_t lit_len = token.end_src_pos - token.start_src_pos;
+do_literal(struct context *ctx) {
+    struct token tok;
+    expect(ctx, TOKEN_LITERAL, &tok);
+    char *lit = ctx->src + tok.start_src_pos;
+    size_t lit_len = tok.end_src_pos - tok.start_src_pos;
     printf("\tmov\tw0, #%.*s\n", (int)lit_len, lit);
 }
 
 static void
-do_fn_call(struct Lexer *lexer) {
+do_fn_call(struct context *ctx) {
     // EBNF: fn_call = ident "(" ")" ;
-    struct Token token;
-    expect(lexer, TOKEN_IDENT, &token);
-    char *name = lexer->src + token.start_src_pos;
-    size_t name_len = token.end_src_pos - token.start_src_pos;
+    struct token tok;
+    expect(ctx, TOKEN_IDENT, &tok);
+    char *name = ctx->src + tok.start_src_pos;
+    size_t name_len = tok.end_src_pos - tok.start_src_pos;
     printf("\tbl\t_%.*s\n", (int)name_len, name);
-    expect(lexer, TOKEN_LEFT_PAREN, NULL);
-    expect(lexer, TOKEN_RIGHT_PAREN, NULL);
+    expect(ctx, TOKEN_LEFT_PAREN, NULL);
+    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
 }
 
 static void
-do_expr(struct Lexer *lexer) {
+do_expr(struct context *ctx) {
     // EBNF: expr = fn_call | literal ;
-    switch (Lexer_peek(lexer)) {
-    case TOKEN_IDENT: do_fn_call(lexer); break;
-    case TOKEN_LITERAL: do_literal(lexer); break;
-    default: expected(lexer, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
+    switch (peek_token_kind(ctx)) {
+    case TOKEN_IDENT: do_fn_call(ctx); break;
+    case TOKEN_LITERAL: do_literal(ctx); break;
+    default: expected(ctx, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
     }
 }
 
 static void
-do_block(struct Lexer *lexer) {
+do_block(struct context *ctx) {
     // EBNF: block = "{" expr "}" ;
-    expect(lexer, TOKEN_LEFT_BRACE, NULL);
-    do_expr(lexer);
-    expect(lexer, TOKEN_RIGHT_BRACE, NULL);
+    expect(ctx, TOKEN_LEFT_BRACE, NULL);
+    do_expr(ctx);
+    expect(ctx, TOKEN_RIGHT_BRACE, NULL);
 }
 
 static void
-do_fn_def(struct Lexer *lexer) {
+do_fn_def(struct context *ctx) {
     // EBNF: fn_def = "fn" ident "(" ")" "->" ident block ;
-    struct Token token;
-    expect(lexer, TOKEN_KEYWORD_FN, NULL);
-    expect(lexer, TOKEN_IDENT, &token);
-    char *name = lexer->src + token.start_src_pos;
-    size_t name_len = token.end_src_pos - token.start_src_pos;
+    struct token tok;
+    expect(ctx, TOKEN_KEYWORD_FN, NULL);
+    expect(ctx, TOKEN_IDENT, &tok);
+    char *name = ctx->src + tok.start_src_pos;
+    size_t name_len = tok.end_src_pos - tok.start_src_pos;
     printf(
         "\n"
         "\t.globl\t_%.*s\n"
@@ -373,12 +373,12 @@ do_fn_def(struct Lexer *lexer) {
         (int)name_len, name,
         (int)name_len, name
     );
-    expect(lexer, TOKEN_LEFT_PAREN, NULL);
-    expect(lexer, TOKEN_RIGHT_PAREN, NULL);
-    expect(lexer, TOKEN_RIGHT_ARROW, NULL);
-    expect(lexer, TOKEN_IDENT, &token);
+    expect(ctx, TOKEN_LEFT_PAREN, NULL);
+    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
+    expect(ctx, TOKEN_RIGHT_ARROW, NULL);
+    expect(ctx, TOKEN_IDENT, &tok);
     // TODO: intern the type, and pass it into do_block to type check
-    do_block(lexer);
+    do_block(ctx);
     printf(
         "\n"
         "\tldp\tx29, x30, [sp], #16\n"
@@ -388,16 +388,16 @@ do_fn_def(struct Lexer *lexer) {
 }
 
 static void
-do_program(struct Lexer *lexer) {
+do_program(struct context *ctx) {
     printf(
         "\t.section\t__TEXT,__text,regular,pure_instructions\n"
     );
     // EBNF: program = { fn_def } EOF ;
     for (;;) {
-        switch (Lexer_peek(lexer)) {
-        case TOKEN_KEYWORD_FN: do_fn_def(lexer); break;
+        switch (peek_token_kind(ctx)) {
+        case TOKEN_KEYWORD_FN: do_fn_def(ctx); break;
         case TOKEN_EOF: return;
-        default: expected(lexer, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
+        default: expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
         }
     }
 }
@@ -443,9 +443,9 @@ main(int argc, char *argv[]) {
         // Continue even if close fails
     }
 
-    struct Lexer lexer;
-    Lexer_init(&lexer, file_path, (char *)mapped, file_size);
-    do_program(&lexer);
+    struct context ctx;
+    init_context(&ctx, file_path, (char *)mapped, file_size);
+    do_program(&ctx);
 
     if (munmap(mapped, file_size) == -1) {
         fprintf(stderr, "Error unmapping file '%s': %s\n", file_path, strerror(errno));
