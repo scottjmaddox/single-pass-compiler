@@ -8,6 +8,8 @@
 #include <string.h>     // For strerror()
 #include <assert.h>     // For assert()
 
+#define MAX_IDENT_SIZE 256
+
 enum TOKEN {
     TOKEN_EOF = 0,
     TOKEN_LEFT_PAREN,
@@ -213,11 +215,112 @@ Lexer_take(struct Lexer *lexer, struct Token* token) {
     lexer->token_count -= 1;
 }
 
+// static enum TOKEN
+// Lexer_peek_at(struct Lexer *lexer, size_t i) {
+//     assert(i < TOKEN_BUF_SIZE);
+//     if (i >= lexer->token_count) { Lexer_fill(lexer); }
+//     return lexer->token_kinds[(lexer->token_offset + i) % TOKEN_BUF_SIZE];
+// }
+
 static enum TOKEN
-Lexer_peek(struct Lexer *lexer, size_t i) {
-    assert(i < TOKEN_BUF_SIZE);
-    if (i >= lexer->token_count) { Lexer_fill(lexer); }
-    return lexer->token_kinds[(lexer->token_offset + i) % TOKEN_BUF_SIZE];
+Lexer_peek(struct Lexer *lexer) {
+    if (lexer->token_count == 0) { Lexer_fill(lexer); }
+    return lexer->token_kinds[lexer->token_offset];
+}
+
+static void
+expected(struct Lexer *lexer, enum TOKEN *token_kinds, size_t token_kinds_len) {
+    struct Token token;
+    Lexer_take(lexer, &token);
+    // TODO: improve error message
+    fprintf(stderr,
+        "Syntax Error: unexpected token %s at %zu-%zu\n"
+        "Expected one of: ",
+        TOKEN_STRING[token.kind], token.start_src_pos, token.end_src_pos);
+    for (size_t i = 0; i < token_kinds_len; i++) {
+        fprintf(stderr, "%s", TOKEN_STRING[token_kinds[i]]);
+        if (i < token_kinds_len - 1) {
+            fprintf(stderr, ", ");
+        }
+    }
+    fprintf(stderr, "\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
+expect(struct Lexer *lexer, enum TOKEN token_kind, struct Token *token_out) {
+    struct Token token;
+    Lexer_take(lexer, &token);
+    if (token.kind != token_kind) {
+        expected(lexer, &token_kind, 1);
+    }
+    if (token_out != NULL) {
+        *token_out = token;
+    }
+}
+
+static void
+do_literal(struct Lexer *lexer) {
+    struct Token token;
+    expect(lexer, TOKEN_LITERAL, &token);
+    char *lit = lexer->src + token.start_src_pos;
+    size_t lit_len = token.end_src_pos - token.start_src_pos;
+    printf("\tmov\tw0, #%.*s\n", (int)lit_len, lit);
+}
+
+static void
+do_expr(struct Lexer *lexer) {
+    // EBNF: expr = literal ;
+   do_literal(lexer);
+}
+
+static void
+do_block(struct Lexer *lexer) {
+    // EBNF: block = "{" expr "}" ;
+    expect(lexer, TOKEN_LEFT_BRACE, NULL);
+    do_expr(lexer);
+    expect(lexer, TOKEN_RIGHT_BRACE, NULL);
+}
+
+static void
+do_fn_def(struct Lexer *lexer) {
+    // EBNF: fn_def = "fn" ident "(" ")" "->" ident block ;
+    struct Token token;
+    expect(lexer, TOKEN_KEYWORD_FN, NULL);
+    expect(lexer, TOKEN_IDENT, &token);
+    char *name = lexer->src + token.start_src_pos;
+    size_t name_len = token.end_src_pos - token.start_src_pos;
+    printf(
+        "\t.section\t__TEXT,__text,regular,pure_instructions\n"
+        "\t.globl\t_%.*s\n"
+        "\t.p2align\t2\n"
+        "_%.*s:\n"
+        "\t.cfi_startproc\n",
+        (int)name_len, name,
+        (int)name_len, name
+    );
+    expect(lexer, TOKEN_LEFT_PAREN, NULL);
+    expect(lexer, TOKEN_RIGHT_PAREN, NULL);
+    expect(lexer, TOKEN_RIGHT_ARROW, NULL);
+    expect(lexer, TOKEN_IDENT, &token);
+    // TODO: intern the type, and pass it into do_block to type check
+    do_block(lexer);
+    printf(
+        "\tret\n"
+        "\t.cfi_endproc\n"
+    );
+}
+
+static void
+do_program(struct Lexer *lexer) {
+    // EBNF: program = { fn_def } EOF ;
+    for (;;) {
+        switch (Lexer_peek(lexer)) {
+        case TOKEN_KEYWORD_FN: do_fn_def(lexer); break;
+        case TOKEN_EOF: return;
+        default: expected(lexer, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
+        }
+    }
 }
 
 int
@@ -243,7 +346,7 @@ main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     if (sb.st_size == 0) {
-        fprintf(stderr, "File '%s' is empty.\n", file_path);
+        fprintf(stderr, "Error: file '%s' is empty.\n", file_path);
         if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", file_path, strerror(errno)); }
         exit(EXIT_FAILURE);
     }
@@ -263,11 +366,7 @@ main(int argc, char *argv[]) {
 
     struct Lexer lexer;
     Lexer_init(&lexer, (char *)mapped, file_size);
-    struct Token token;
-    do {
-        Lexer_take(&lexer, &token);
-        printf("%s %zu-%zu\n", TOKEN_STRING[token.kind], token.start_src_pos, token.end_src_pos);
-    } while (token.kind != TOKEN_EOF);
+    do_program(&lexer);
 
     if (munmap(mapped, file_size) == -1) {
         fprintf(stderr, "Error unmapping file '%s': %s\n", file_path, strerror(errno));
