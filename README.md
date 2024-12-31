@@ -2,7 +2,7 @@
 
 A single-pass compiler, for learning. The syntax is based on Rust. The target is the Apple M1 chip.
 
-## Step 1
+## Step 2
 
 A minimal grammar, in extended Backus–Naur form (EBNF):
 
@@ -10,7 +10,8 @@ A minimal grammar, in extended Backus–Naur form (EBNF):
 program = { fn_def } EOF ;
 fn_def = "fn" ident "(" ")" "->" ident block ;
 block = "{" expr "}" ;
-expr = literal ;
+expr = fn_call | literal ;
+fn_call = ident "(" ")" ;
 
 ident = ident_start { ident_rest } ;
 literal = literal_start { literal_rest } ;
@@ -25,13 +26,19 @@ digit = "0" .. "9" ;
 To build and run the compiler on `example.spc`:
 
 ```sh
-./build.sh && ./spc example.spc > example.s
+./build.sh && ./spc examples/002.spc > example.spc.s
 ```
 
-To build and run the resulting assembly:
+You can also build the corresponding C file to assembly, to compare:
 
 ```sh
-clang -o example example.s && ./example
+clang -o example.c.s -S examples/002.c
+```
+
+To build, link, and run the resulting assembly:
+
+```sh
+clang -arch arm64 -o example example.spc.s && ./example
 ```
 
 To confirm the expected exit code:
@@ -43,4 +50,17 @@ echo $? # should output 42
 ## References
 
 - [Simple but Powerful Pratt Parsing](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html)
+- [HelloSilicon](https://github.com/below/HelloSilicon)
 - [A Gentle Introduction to Assembly Language Programming](https://github.com/pkivolowitz/asm_book)
+
+## TODO
+
+- [x] minimal single-pass-compiled and running program (main function returning a literal)
+- [x] support parameter-free function calls
+- [ ] improve syntax error message
+- [ ] comments
+- [ ] arithmetic
+- [ ] local variables
+- [ ] references
+- [ ] type checking
+- [ ] add u8 type and type conversion

@@ -1,4 +1,4 @@
 /spc
-/example.c
-/example.s
+/*.s
+/*.o
 /example

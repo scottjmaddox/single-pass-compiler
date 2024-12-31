@@ -269,9 +269,25 @@ do_literal(struct Lexer *lexer) {
 }
 
 static void
+do_fn_call(struct Lexer *lexer) {
+    // EBNF: fn_call = ident "(" ")" ;
+    struct Token token;
+    expect(lexer, TOKEN_IDENT, &token);
+    char *name = lexer->src + token.start_src_pos;
+    size_t name_len = token.end_src_pos - token.start_src_pos;
+    printf("\tbl\t_%.*s\n", (int)name_len, name);
+    expect(lexer, TOKEN_LEFT_PAREN, NULL);
+    expect(lexer, TOKEN_RIGHT_PAREN, NULL);
+}
+
+static void
 do_expr(struct Lexer *lexer) {
-    // EBNF: expr = literal ;
-   do_literal(lexer);
+    // EBNF: expr = fn_call | literal ;
+    switch (Lexer_peek(lexer)) {
+    case TOKEN_IDENT: do_fn_call(lexer); break;
+    case TOKEN_LITERAL: do_literal(lexer); break;
+    default: expected(lexer, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
+    }
 }
 
 static void
@@ -291,11 +307,13 @@ do_fn_def(struct Lexer *lexer) {
     char *name = lexer->src + token.start_src_pos;
     size_t name_len = token.end_src_pos - token.start_src_pos;
     printf(
-        "\t.section\t__TEXT,__text,regular,pure_instructions\n"
+        "\n"
         "\t.globl\t_%.*s\n"
         "\t.p2align\t2\n"
         "_%.*s:\n"
-        "\t.cfi_startproc\n",
+        "\t.cfi_startproc\n"
+        "\tstp\tx29, x30, [sp, #-16]!\n"
+        "\n",
         (int)name_len, name,
         (int)name_len, name
     );
@@ -306,6 +324,8 @@ do_fn_def(struct Lexer *lexer) {
     // TODO: intern the type, and pass it into do_block to type check
     do_block(lexer);
     printf(
+        "\n"
+        "\tldp\tx29, x30, [sp], #16\n"
         "\tret\n"
         "\t.cfi_endproc\n"
     );
@@ -313,6 +333,9 @@ do_fn_def(struct Lexer *lexer) {
 
 static void
 do_program(struct Lexer *lexer) {
+    printf(
+        "\t.section\t__TEXT,__text,regular,pure_instructions\n"
+    );
     // EBNF: program = { fn_def } EOF ;
     for (;;) {
         switch (Lexer_peek(lexer)) {
