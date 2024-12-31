@@ -9,6 +9,7 @@
 #include <assert.h>     // For assert()
 
 #define MAX_TOKEN_LOOKAHEAD 2
+#define MAX_LITERAL_LEN 256
 
 enum TOKEN {
     TOKEN_EOF = 0,
@@ -254,12 +255,23 @@ expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
     }
 }
 
+size_t // out_len
+remove_underscores(char *in, size_t in_len, char *out, size_t out_cap) {
+    size_t j = 0;
+    for (size_t i = 0; i < in_len && j < out_cap; i++) {
+        if (in[i] != '_') {
+            out[j++] = in[i];
+        }
+    }
+    return j;
+}
+
 static void
 compile_literal(struct context *ctx) {
     struct token tok;
     expect(ctx, TOKEN_LITERAL, &tok);
-    char *lit = ctx->src + tok.idx;
-    size_t lit_len = tok.len;
+    char lit[MAX_LITERAL_LEN];
+    size_t lit_len = remove_underscores(ctx->src + tok.idx, tok.len, lit, MAX_LITERAL_LEN);
     fprintf(ctx->output_file, "\tmov\tw0, #%.*s\n", (int)lit_len, lit);
 }
 

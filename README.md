@@ -47,7 +47,6 @@ digit = "0" .. "9" ;
 
 - [x] minimal single-pass-compiled and running program (main function returning a literal)
 - [x] support parameter-free function calls
-- [ ] properly handle `_` in integer literals
 - [ ] comments
 - [ ] arithmetic
 - [ ] local variables
