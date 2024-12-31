@@ -15,10 +15,13 @@ enum TOKEN {
     TOKEN_EOF = 0,
     TOKEN_LEFT_PAREN,
     TOKEN_RIGHT_PAREN,
+    TOKEN_SEMICOLON,
+    TOKEN_EQUAL,
     TOKEN_LEFT_BRACE,
     TOKEN_RIGHT_BRACE,
     TOKEN_RIGHT_ARROW,
     TOKEN_KEYWORD_FN,
+    TOKEN_KEYWORD_LET,
     TOKEN_IDENT,
     TOKEN_LITERAL,
     TOKEN_UNKNOWN,
@@ -28,10 +31,13 @@ static char *TOKEN_NAMES[] = {
     "EOF",
     "LEFT_PAREN",
     "RIGHT_PAREN",
+    "SEMICOLON",
+    "EQUAL",
     "LEFT_BRACE",
     "RIGHT_BRACE",
     "RIGHT_ARROW",
     "KEYWORD_FN",
+    "KEYWORD_LET",
     "IDENT",
     "LITERAL",
     "UNKNOWN",
@@ -62,6 +68,10 @@ struct context {
     struct token tokens[MAX_TOKEN_LOOKAHEAD];
 };
 
+//////////////////////
+// Lexical analysis //
+//////////////////////
+
 static struct token
 lex(char *src, size_t src_len, size_t from_idx) {
     struct token tok = { .kind = TOKEN_UNKNOWN, .idx = from_idx, .len = 1, .line = 1, .col = 1 };
@@ -78,18 +88,12 @@ lex(char *src, size_t src_len, size_t from_idx) {
             tok.line += 1;
             tok.col = 1;
             continue;
-        case '(':
-            tok.kind = TOKEN_LEFT_PAREN;
-            return tok;
-        case ')':
-            tok.kind = TOKEN_RIGHT_PAREN;
-            return tok;
-        case '{':
-            tok.kind = TOKEN_LEFT_BRACE;
-            return tok;
-        case '}':
-            tok.kind = TOKEN_RIGHT_BRACE;
-            return tok;
+        case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
+        case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
+        case ';': tok.kind = TOKEN_SEMICOLON; return tok;
+        case '=': tok.kind = TOKEN_EQUAL; return tok;
+        case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
+        case '}': tok.kind = TOKEN_RIGHT_BRACE; return tok;
         case '-':
             if (tok.idx + 1 < src_len) {
                 switch (src[tok.idx + 1]) {
@@ -119,8 +123,14 @@ lex(char *src, size_t src_len, size_t from_idx) {
             tok.len = i - tok.idx;
             switch (tok.len) {
             case 2:
-                if (src[tok.idx] == 'f' && src[tok.idx + 1] == 'n') {
+                if (strncmp(src + tok.idx, "fn", 2) == 0) {
                     tok.kind = TOKEN_KEYWORD_FN;
+                    return tok;
+                }
+                break;
+            case 3:
+                if (strncmp(src + tok.idx, "let", 3) == 0) {
+                    tok.kind = TOKEN_KEYWORD_LET;
                     return tok;
                 }
                 break;
@@ -187,6 +197,10 @@ peek_token_kind(struct context *ctx) {
     return ctx->tokens[ctx->token_offset].kind;
 }
 
+///////////////////////////////
+// Diagnostics and Utilities //
+///////////////////////////////
+
 static struct str
 get_token_line(struct context *ctx, struct token tok) {
     size_t idx = 0;
@@ -249,6 +263,14 @@ eprint_expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds
 }
 
 static void
+eprint_int_literal_too_long(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: integer literal too long\n");
+    eprint_token_line(ctx, tok);
+    fprintf(stderr, "Maximum allowed length (excluding underscores): %d\n", MAX_INT_LITERAL_LEN);
+    exit(EXIT_FAILURE);
+}
+
+static void
 expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
     struct token tok;
     take_token(ctx, &tok);
@@ -276,60 +298,19 @@ remove_underscores(char *in, size_t in_len, char *out, size_t out_cap, size_t *o
     return 0;
 }
 
+/////////////////////////////
+// Parsing and Compilation //
+/////////////////////////////
+
 static void
-compile_literal(struct context *ctx) {
-    struct token tok;
-    expect(ctx, TOKEN_LITERAL, &tok);
-    char lit[MAX_INT_LITERAL_LEN];
-    size_t lit_len;
-    if (remove_underscores(ctx->src + tok.idx, tok.len, lit, MAX_INT_LITERAL_LEN, &lit_len) == -1) {
-        fprintf(stderr, "error: integer literal too long\n");
-        eprint_token_line(ctx, tok);
-        fprintf(stderr, "Maximum allowed length: %d\n", MAX_INT_LITERAL_LEN);
-        fprintf(stderr, "Actual length: %zu\n", tok.len);
-        exit(EXIT_FAILURE);
-    }
-    fprintf(ctx->output_file, "\tmov\tw0, #%.*s\n", (int)lit_len, lit);
+emit_program_prologue(struct context *ctx) {
+    fprintf(ctx->output_file,
+        "\t.section\t__TEXT,__text,regular,pure_instructions\n"
+    );
 }
 
 static void
-compile_fn_call(struct context *ctx) {
-    // EBNF: fn_call = ident "(" ")" ;
-    struct token tok;
-    expect(ctx, TOKEN_IDENT, &tok);
-    char *name = ctx->src + tok.idx;
-    size_t name_len = tok.len;
-    fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
-    expect(ctx, TOKEN_LEFT_PAREN, NULL);
-    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
-}
-
-static void
-compile_expr(struct context *ctx) {
-    // EBNF: expr = fn_call | literal ;
-    switch (peek_token_kind(ctx)) {
-    case TOKEN_IDENT: compile_fn_call(ctx); break;
-    case TOKEN_LITERAL: compile_literal(ctx); break;
-    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
-    }
-}
-
-static void
-compile_block(struct context *ctx) {
-    // EBNF: block = "{" expr "}" ;
-    expect(ctx, TOKEN_LEFT_BRACE, NULL);
-    compile_expr(ctx);
-    expect(ctx, TOKEN_RIGHT_BRACE, NULL);
-}
-
-static void
-compile_fn_def(struct context *ctx) {
-    // EBNF: fn_def = "fn" ident "(" ")" "->" ident block ;
-    struct token tok;
-    expect(ctx, TOKEN_KEYWORD_FN, NULL);
-    expect(ctx, TOKEN_IDENT, &tok);
-    char *name = ctx->src + tok.idx;
-    size_t name_len = tok.len;
+emit_fn_prologue(struct context *ctx, char *name, size_t name_len) {
     fprintf(ctx->output_file,
         "\n"
         "\t.globl\t_%.*s\n"
@@ -341,12 +322,10 @@ compile_fn_def(struct context *ctx) {
         (int)name_len, name,
         (int)name_len, name
     );
-    expect(ctx, TOKEN_LEFT_PAREN, NULL);
-    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
-    expect(ctx, TOKEN_RIGHT_ARROW, NULL);
-    expect(ctx, TOKEN_IDENT, &tok);
-    // TODO: intern the type, and pass it into compile_block to type check
-    compile_block(ctx);
+}
+
+static void
+emit_fn_epilogue(struct context *ctx) {
     fprintf(ctx->output_file,
         "\n"
         "\tldp\tx29, x30, [sp], #16\n"
@@ -356,19 +335,106 @@ compile_fn_def(struct context *ctx) {
 }
 
 static void
+emit_fn_call(struct context *ctx, char *name, size_t name_len) {
+    fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
+}
+
+static void
+emit_int_literal(struct context *ctx, char *lit, size_t lit_len) {
+    fprintf(ctx->output_file, "\tmov\tw0, #%.*s\n", (int)lit_len, lit);
+}
+
+static void compile_program(struct context *ctx);
+static void compile_stmnt(struct context *ctx);
+static void compile_let_stmnt(struct context *ctx);
+static void compile_fn_def(struct context *ctx);
+static void compile_expr(struct context *ctx);
+static void compile_fn_call(struct context *ctx);
+static void compile_literal(struct context *ctx);
+
+static void
 compile_program(struct context *ctx) {
-    // EBNF: program = { fn_def } EOF ;
-    fprintf(ctx->output_file,
-        "\t.section\t__TEXT,__text,regular,pure_instructions\n"
-    );
-    for (;;) {
-        switch (peek_token_kind(ctx)) {
-        case TOKEN_KEYWORD_FN: compile_fn_def(ctx); break;
-        case TOKEN_EOF: return;
-        default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
-        }
+    // EBNF: program = { stmnt } ;
+    emit_program_prologue(ctx);
+    while (peek_token_kind(ctx) != TOKEN_EOF) {
+        compile_stmnt(ctx);
     }
 }
+
+static void
+compile_stmnt(struct context *ctx) {
+    // EBNF: stmnt = let_stmnt ;
+    switch (peek_token_kind(ctx)) {
+    case TOKEN_KEYWORD_LET: compile_let_stmnt(ctx); break;
+    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_LET}, 1);
+    }
+}
+
+static void
+compile_let_stmnt(struct context *ctx) {
+    // EBNF: let_stmnt = "let" ident "=" fn_def ";" ;
+    expect(ctx, TOKEN_KEYWORD_LET, NULL);
+    struct token tok;
+    expect(ctx, TOKEN_IDENT, &tok);
+    expect(ctx, TOKEN_EQUAL, NULL);
+    emit_fn_prologue(ctx, ctx->src + tok.idx, tok.len);
+    compile_expr(ctx);
+    emit_fn_epilogue(ctx);
+    expect(ctx, TOKEN_SEMICOLON, NULL);
+}
+
+static void
+compile_fn_def(struct context *ctx) {
+    // EBNF: fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
+    expect(ctx, TOKEN_KEYWORD_FN, NULL);
+    expect(ctx, TOKEN_LEFT_PAREN, NULL);
+    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
+    expect(ctx, TOKEN_RIGHT_ARROW, NULL);
+    // TODO: support arbitrary type expressions
+    struct token tok;
+    expect(ctx, TOKEN_IDENT, &tok);
+    // TODO: intern the type, and type check
+    expect(ctx, TOKEN_LEFT_BRACE, NULL);
+    compile_expr(ctx);
+    expect(ctx, TOKEN_RIGHT_BRACE, NULL);
+}
+
+static void
+compile_expr(struct context *ctx) {
+    // EBNF: expr = literal | fn_call ;
+    switch (peek_token_kind(ctx)) {
+    case TOKEN_LITERAL: compile_literal(ctx); break;
+    case TOKEN_IDENT: compile_fn_call(ctx); break;
+    case TOKEN_KEYWORD_FN: compile_fn_def(ctx); break;
+    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_LITERAL, TOKEN_IDENT, TOKEN_KEYWORD_FN}, 3);
+    }
+}
+
+static void
+compile_fn_call(struct context *ctx) {
+    // EBNF: fn_call = ident "(" ")" ;
+    struct token tok;
+    expect(ctx, TOKEN_IDENT, &tok);
+    expect(ctx, TOKEN_LEFT_PAREN, NULL);
+    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
+    emit_fn_call(ctx, ctx->src + tok.idx, tok.len);
+}
+
+static void
+compile_literal(struct context *ctx) {
+    struct token tok;
+    expect(ctx, TOKEN_LITERAL, &tok);
+    char lit[MAX_INT_LITERAL_LEN];
+    size_t lit_len;
+    if (remove_underscores(ctx->src + tok.idx, tok.len, lit, MAX_INT_LITERAL_LEN, &lit_len) == -1) {
+        eprint_int_literal_too_long(ctx, tok);
+    }
+    emit_int_literal(ctx, lit, lit_len);
+}
+
+/////////////////
+// Entry point //
+/////////////////
 
 char *
 get_default_output_file_path(const char *input_file_path) {

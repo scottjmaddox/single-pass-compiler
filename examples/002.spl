@@ -1,11 +1,11 @@
-fn foo() -> i32 {
+let foo = fn() -> i32 {
     42
-}
+};
 
-fn bar() -> i32 {
+let bar = fn() -> i32 {
     foo()
-}
+};
 
-fn main() -> i32 {
+let main = fn() -> i32 {
     bar()
-}
+};

@@ -21,11 +21,13 @@ make examples
 The currently supported grammar, in extended Backus–Naur form (EBNF):
 
 ```ebnf
-program = { fn_def } EOF ;
-fn_def = "fn" ident "(" ")" "->" ident block ;
-block = "{" expr "}" ;
-expr = fn_call | literal ;
+program = { stmnt } ;
+stmnt = let_stmnt ;
+let_stmnt = "let" ident "=" fn_def ";" ;
+expr = literal | fn_call ;
 fn_call = ident "(" ")" ;
+fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
+type_expr = ident ;
 
 ident = ident_start { ident_rest } ;
 literal = literal_start { literal_rest } ;
