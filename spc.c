@@ -376,7 +376,7 @@ main(int argc, char *argv[]) {
                 fprintf(stderr, "Usage: %s [-o OUT_FILE] FILE\n", argv[0]);
                 exit(EXIT_FAILURE);
             default:
-                assert(0);
+                assert(!"unreachable");
         }
     }
     // After option parsing, optind is the index of the first non-option argument
