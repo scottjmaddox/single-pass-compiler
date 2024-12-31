@@ -36,113 +36,73 @@ static char *TOKEN_NAMES[] = {
     "UNKNOWN",
 };
 
-struct token {
-    enum TOKEN kind;
-    size_t start_src_pos;
-    size_t end_src_pos;
+struct str {
+    size_t len;
+    char *ptr;
 };
 
-struct token_diagnostics {
-    size_t start_src_line;
-    size_t start_src_col;
-    char *line;
-    size_t line_len;
+struct token {
+    enum TOKEN kind;
+    size_t idx;
+    size_t len;
+    size_t line;
+    size_t col;
 };
 
 struct context {
     char *file_path;
     char *src;
     size_t src_len;
-    size_t src_pos;
-    // Token ring buffers
+    size_t src_idx;
+    // Token ring buffer
     size_t token_offset;
     size_t token_count;
-    size_t token_start_src_pos[MAX_TOKEN_LOOKAHEAD];
-    size_t token_end_src_pos[MAX_TOKEN_LOOKAHEAD];
-    enum TOKEN token_kinds[MAX_TOKEN_LOOKAHEAD];
+    struct token tokens[MAX_TOKEN_LOOKAHEAD];
 };
 
-static void
-init_context(struct context *ctx, char *file_path, char *src, size_t src_len) {
-    ctx->file_path = file_path;
-    ctx->src = src;
-    ctx->src_len = src_len;
-    ctx->src_pos = 0;
-    ctx->token_offset = 0;
-    ctx->token_count = 0;
-}
-
-static void
-push_token(struct context *ctx, enum TOKEN token_kind, size_t token_start_src_pos, size_t token_end_src_pos) {
-    assert(ctx->token_count < MAX_TOKEN_LOOKAHEAD);
-    size_t i = (ctx->token_offset + ctx->token_count) % MAX_TOKEN_LOOKAHEAD;
-    ctx->token_kinds[i] = token_kind;
-    ctx->token_start_src_pos[i] = token_start_src_pos;
-    ctx->token_end_src_pos[i] = token_end_src_pos;
-    ctx->token_count += 1;
-}
-
-static void
-fill_tokens(struct context *ctx) {
-    char *src = ctx->src;
-    size_t src_len = ctx->src_len;
-    size_t i = ctx->src_pos;
-    size_t start;
-    while (ctx->token_count < MAX_TOKEN_LOOKAHEAD) {
-        if (i >= src_len) {
-            push_token(ctx, TOKEN_EOF, i, i);
-            continue;
-        }
-        start = i;
-        switch (src[i]) {
+static struct token
+lex(char *src, size_t src_len, size_t from_idx) {
+    struct token tok = { .kind = TOKEN_UNKNOWN, .idx = from_idx, .len = 1, .line = 1, .col = 1 };
+    size_t i;
+    while (tok.idx < src_len) {
+        switch (src[tok.idx]) {
         case ' ':
-        case '\n':
-        case '\r':
         case '\t':
-            i += 1;
-            whitespace_loop:
-            while (i < src_len) {
-                switch (src[i]) {
-                case ' ':
-                case '\n':
-                case '\r':
-                case '\t':
-                    i += 1;
-                    goto whitespace_loop;
-                }
-                break;
-            }
-            break;
+            tok.idx += 1;
+            tok.col += 1;
+            continue;
+        case '\n':
+            tok.idx += 1;
+            tok.line += 1;
+            tok.col = 1;
+            continue;
         case '(':
-            i += 1;
-            push_token(ctx, TOKEN_LEFT_PAREN, start, i);
-            break;
+            tok.kind = TOKEN_LEFT_PAREN;
+            return tok;
         case ')':
-            i += 1;
-            push_token(ctx, TOKEN_RIGHT_PAREN, start, i);
-            break;
+            tok.kind = TOKEN_RIGHT_PAREN;
+            return tok;
         case '{':
-            i += 1;
-            push_token(ctx, TOKEN_LEFT_BRACE, start, i);
-            break;
+            tok.kind = TOKEN_LEFT_BRACE;
+            return tok;
         case '}':
-            i += 1;
-            push_token(ctx, TOKEN_RIGHT_BRACE, start, i);
-            break;
+            tok.kind = TOKEN_RIGHT_BRACE;
+            return tok;
         case '-':
-            i += 1;
-            if (i < src_len && src[i] == '>') {
-                i += 1;
-                push_token(ctx, TOKEN_RIGHT_ARROW, start, i);
-                break;
+            if (tok.idx + 1 < src_len) {
+                switch (src[tok.idx + 1]) {
+                case '>':
+                    tok.kind = TOKEN_RIGHT_ARROW;
+                    tok.len = 2;
+                    return tok;
+                }
             }
-            push_token(ctx, TOKEN_UNKNOWN, start, i);
-            break;
+            tok.kind = TOKEN_UNKNOWN;
+            return tok;
         case '_':
         case 'A' ... 'Z':
         case 'a' ... 'z':
-            i += 1;
-            ident_loop:
+            i = tok.idx + 1;
             while (i < src_len) {
                 switch (src[i]) {
                 case '_':
@@ -150,77 +110,75 @@ fill_tokens(struct context *ctx) {
                 case 'a' ... 'z':
                 case '0' ... '9':
                     i += 1;
-                    goto ident_loop;
+                    continue;
                 }
                 break;
             }
-            switch (i - start) {
+            tok.len = i - tok.idx;
+            switch (tok.len) {
             case 2:
-                if (src[start] == 'f' && src[start + 1] == 'n') {
-                    push_token(ctx, TOKEN_KEYWORD_FN, start, i);
-                    break;
+                if (src[tok.idx] == 'f' && src[tok.idx + 1] == 'n') {
+                    tok.kind = TOKEN_KEYWORD_FN;
+                    return tok;
                 }
-                // fallthrough
-            default:
-                push_token(ctx, TOKEN_IDENT, start, i);
                 break;
             }
-            break;
+            tok.kind = TOKEN_IDENT;
+            return tok;
         case '0' ... '9':
-            i += 1;
-            literal_loop:
+            i = tok.idx + 1;
             while (i < src_len) {
                 switch (src[i]) {
                 case '_':
                 case '0' ... '9':
                     i += 1;
-                    goto literal_loop;
+                    continue;
                 }
                 break;
             }
-            push_token(ctx, TOKEN_LITERAL, start, i);
-            break;
-        default:
-            i += 1;
-            unknown_loop:
-            while (i < src_len) {
-                switch (src[i]) {
-                    case ' ':
-                    case '\n':
-                    case '\r':
-                    case '\t':
-                    case '(':
-                    case ')':
-                    case '{':
-                    case '}':
-                    case '-':
-                    case '>':
-                    case '_':
-                    case 'A' ... 'Z':
-                    case 'a' ... 'z':
-                    case '0' ... '9':
-                        break;
-                    default:
-                        i += 1;
-                        goto unknown_loop;
-                }
-                break;
-            }
-            push_token(ctx, TOKEN_UNKNOWN, start, i);
-            break;
+            tok.kind = TOKEN_LITERAL;
+            tok.len = i - tok.idx;
+            return tok;
         }
+        tok.kind = TOKEN_UNKNOWN;
+        return tok;
     }
-    ctx->src_pos = i;
+    tok.kind = TOKEN_EOF;
+    tok.len = 0;
+    return tok;
+}
+
+static void
+init_context(struct context *ctx, char *file_path, char *src, size_t src_len) {
+    ctx->file_path = file_path;
+    ctx->src = src;
+    ctx->src_len = src_len;
+    ctx->src_idx = 0;
+    ctx->token_offset = 0;
+    ctx->token_count = 0;
+}
+
+static void
+push_token(struct context *ctx, struct token tok) {
+    assert(ctx->token_count < MAX_TOKEN_LOOKAHEAD);
+    ctx->tokens[(ctx->token_offset + ctx->token_count) % MAX_TOKEN_LOOKAHEAD] = tok;
+    ctx->token_count += 1;
+    ctx->src_idx = tok.idx + tok.len;
+}
+
+static void
+fill_tokens(struct context *ctx) {
+    while (ctx->token_count < MAX_TOKEN_LOOKAHEAD) {
+        struct token tok = lex(ctx->src, ctx->src_len, ctx->src_idx);
+        push_token(ctx, tok);
+    }
 }
 
 static void
 take_token(struct context *ctx, struct token* token) {
     if (ctx->token_count == 0) { fill_tokens(ctx); }
-    size_t i = ctx->token_offset;
-    token->kind = ctx->token_kinds[i];
-    token->start_src_pos = ctx->token_start_src_pos[i];
-    token->end_src_pos = ctx->token_end_src_pos[i];
-    ctx->token_offset = (i + 1) % MAX_TOKEN_LOOKAHEAD;
+    *token = ctx->tokens[ctx->token_offset];
+    ctx->token_offset = (ctx->token_offset + 1) % MAX_TOKEN_LOOKAHEAD;
     ctx->token_count -= 1;
 }
 
@@ -234,62 +192,53 @@ take_token(struct context *ctx, struct token* token) {
 static enum TOKEN
 peek_token_kind(struct context *ctx) {
     if (ctx->token_count == 0) { fill_tokens(ctx); }
-    return ctx->token_kinds[ctx->token_offset];
+    return ctx->tokens[ctx->token_offset].kind;
 }
 
-static struct token_diagnostics
-get_token_diagnostics(struct context *ctx, struct token tok) {
-    struct token_diagnostics diag = {
-        .start_src_line = 1,
-        .start_src_col = 1,
-        .line = NULL,
-        .line_len = 0,
-    };
-    size_t line_start_pos = 0;
-    for (size_t i = 0; i < tok.start_src_pos; i++) {
-        switch (ctx->src[i]) {
+static struct str
+get_token_line(struct context *ctx, struct token tok) {
+    size_t idx = 0;
+    size_t line = 1;
+    while (line < tok.line) {
+        switch (ctx->src[idx]) {
         case '\n':
-            diag.start_src_line += 1;
-            diag.start_src_col = 1;
-            line_start_pos = i + 1;
+            idx += 1;
+            line += 1;
             break;
         default:
-            diag.start_src_col += 1;
+            idx += 1;
             break;
         }
     }
-
-    size_t line_end_pos = line_start_pos;
-    while (line_end_pos < ctx->src_len && ctx->src[line_end_pos] != '\n') {
-        line_end_pos += 1;
+    size_t len = 0;
+    while (idx + len < ctx->src_len && ctx->src[idx + len] != '\n') {
+        len += 1;
     }
-    diag.line = ctx->src + line_start_pos;
-    diag.line_len = line_end_pos - line_start_pos;
-    return diag;
+    return (struct str){ .len = len, .ptr = ctx->src + idx };;
 }
 
 static void
 expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
     struct token tok;
     take_token(ctx, &tok);
-    struct token_diagnostics diag = get_token_diagnostics(ctx, tok);
+    struct str token_line = get_token_line(ctx, tok);
     fprintf(stderr,
         "error: unexpected token %s\n"
         " --> %s:%zu:%zu\n"
         "  |\n"
         "  | %.*s\n",
-        TOKEN_NAMES[tok.kind], ctx->file_path, diag.start_src_line, diag.start_src_col,
-        (int)diag.line_len, diag.line
+        TOKEN_NAMES[tok.kind], ctx->file_path, tok.line, tok.col,
+        (int)token_line.len, token_line.ptr
     );
     fprintf(stderr, "  | ");
-    for (size_t i = 0; i < diag.start_src_col - 1; i++) {
-        if (diag.line[i] == '\t') {
+    for (size_t i = 0; i < tok.col - 1; i++) {
+        if (token_line.ptr[i] == '\t') {
             fputc('\t', stderr);
         } else {
             fputc(' ', stderr);
         }
     }
-    for (size_t i = 0; i < tok.end_src_pos - tok.start_src_pos; i++) { fputc('^', stderr); }
+    for (size_t i = 0; i < tok.len; i++) { fputc('^', stderr); }
     fprintf(stderr, "\n");
     fprintf(stderr, "Expected one of: ");
     for (size_t i = 0; i < token_kinds_len; i++) {
@@ -318,8 +267,8 @@ static void
 do_literal(struct context *ctx) {
     struct token tok;
     expect(ctx, TOKEN_LITERAL, &tok);
-    char *lit = ctx->src + tok.start_src_pos;
-    size_t lit_len = tok.end_src_pos - tok.start_src_pos;
+    char *lit = ctx->src + tok.idx;
+    size_t lit_len = tok.len;
     printf("\tmov\tw0, #%.*s\n", (int)lit_len, lit);
 }
 
@@ -328,8 +277,8 @@ do_fn_call(struct context *ctx) {
     // EBNF: fn_call = ident "(" ")" ;
     struct token tok;
     expect(ctx, TOKEN_IDENT, &tok);
-    char *name = ctx->src + tok.start_src_pos;
-    size_t name_len = tok.end_src_pos - tok.start_src_pos;
+    char *name = ctx->src + tok.idx;
+    size_t name_len = tok.len;
     printf("\tbl\t_%.*s\n", (int)name_len, name);
     expect(ctx, TOKEN_LEFT_PAREN, NULL);
     expect(ctx, TOKEN_RIGHT_PAREN, NULL);
@@ -359,8 +308,8 @@ do_fn_def(struct context *ctx) {
     struct token tok;
     expect(ctx, TOKEN_KEYWORD_FN, NULL);
     expect(ctx, TOKEN_IDENT, &tok);
-    char *name = ctx->src + tok.start_src_pos;
-    size_t name_len = tok.end_src_pos - tok.start_src_pos;
+    char *name = ctx->src + tok.idx;
+    size_t name_len = tok.len;
     printf(
         "\n"
         "\t.globl\t_%.*s\n"
