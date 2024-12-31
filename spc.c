@@ -232,7 +232,7 @@ eprint_token_line(struct context *ctx, struct token tok) {
 }
 
 static void
-expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
+eprint_expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
     struct token tok;
     take_token(ctx, &tok);
     fprintf(stderr, "error: unexpected token %s\n", TOKEN_NAMES[tok.kind]);
@@ -253,7 +253,7 @@ expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
     struct token tok;
     take_token(ctx, &tok);
     if (tok.kind != token_kind) {
-        expected(ctx, &token_kind, 1);
+        eprint_expected(ctx, &token_kind, 1);
     }
     if (tok_out != NULL) {
         *tok_out = tok;
@@ -310,7 +310,7 @@ compile_expr(struct context *ctx) {
     switch (peek_token_kind(ctx)) {
     case TOKEN_IDENT: compile_fn_call(ctx); break;
     case TOKEN_LITERAL: compile_literal(ctx); break;
-    default: expected(ctx, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
+    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_IDENT, TOKEN_LITERAL}, 2);
     }
 }
 
@@ -365,7 +365,7 @@ compile_program(struct context *ctx) {
         switch (peek_token_kind(ctx)) {
         case TOKEN_KEYWORD_FN: compile_fn_def(ctx); break;
         case TOKEN_EOF: return;
-        default: expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
+        default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_FN, TOKEN_EOF}, 2);
         }
     }
 }
