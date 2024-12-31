@@ -8,7 +8,6 @@
 #include <string.h>     // For strerror()
 #include <assert.h>     // For assert()
 
-#define MAX_IDENT_SIZE 256
 #define MAX_TOKEN_LOOKAHEAD 2
 
 enum TOKEN {
