@@ -149,16 +149,6 @@ lex(char *src, size_t src_len, size_t from_idx) {
 }
 
 static void
-init_context(struct context *ctx, char *file_path, char *src, size_t src_len) {
-    ctx->file_path = file_path;
-    ctx->src = src;
-    ctx->src_len = src_len;
-    ctx->src_idx = 0;
-    ctx->token_offset = 0;
-    ctx->token_count = 0;
-}
-
-static void
 push_token(struct context *ctx, struct token tok) {
     assert(ctx->token_count < MAX_TOKEN_LOOKAHEAD);
     ctx->tokens[(ctx->token_offset + ctx->token_count) % MAX_TOKEN_LOOKAHEAD] = tok;
@@ -391,8 +381,11 @@ main(int argc, char *argv[]) {
         // Continue even if close fails
     }
 
-    struct context ctx;
-    init_context(&ctx, file_path, (char *)mapped, file_size);
+    struct context ctx = {
+        .file_path = file_path,
+        .src = (char *)mapped,
+        .src_len = file_size,
+    };
     do_program(&ctx);
 
     if (munmap(mapped, file_size) == -1) {
