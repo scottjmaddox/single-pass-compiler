@@ -1,4 +1,5 @@
 /spc
+*.dSYM/
 *.s
 /examples/*
 !/examples/*.c

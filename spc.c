@@ -48,12 +48,16 @@ struct str {
     char *ptr;
 };
 
-struct token {
-    enum TOKEN kind;
+struct location {
     size_t idx;
-    size_t len;
     size_t line;
     size_t col;
+};
+
+struct token {
+    enum TOKEN kind;
+    struct location loc;
+    size_t len;
 };
 
 struct context {
@@ -61,7 +65,7 @@ struct context {
     char *input_file_path;
     char *src;
     size_t src_len;
-    size_t src_idx;
+    struct location src_loc;
     // Token ring buffer
     size_t token_offset;
     size_t token_count;
@@ -73,20 +77,20 @@ struct context {
 //////////////////////
 
 static struct token
-lex(char *src, size_t src_len, size_t from_idx) {
-    struct token tok = { .kind = TOKEN_UNKNOWN, .idx = from_idx, .len = 1, .line = 1, .col = 1 };
+lex(char *src, size_t src_len, struct location from_loc) {
+    struct token tok = { .kind = TOKEN_UNKNOWN, .len = 1, .loc = from_loc };
     size_t i;
-    while (tok.idx < src_len) {
-        switch (src[tok.idx]) {
+    while (tok.loc.idx < src_len) {
+        switch (src[tok.loc.idx]) {
         case ' ':
         case '\t':
-            tok.idx += 1;
-            tok.col += 1;
+            tok.loc.idx += 1;
+            tok.loc.col += 1;
             continue;
         case '\n':
-            tok.idx += 1;
-            tok.line += 1;
-            tok.col = 1;
+            tok.loc.idx += 1;
+            tok.loc.line += 1;
+            tok.loc.col = 1;
             continue;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
@@ -95,8 +99,8 @@ lex(char *src, size_t src_len, size_t from_idx) {
         case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
         case '}': tok.kind = TOKEN_RIGHT_BRACE; return tok;
         case '-':
-            if (tok.idx + 1 < src_len) {
-                switch (src[tok.idx + 1]) {
+            if (tok.loc.idx + 1 < src_len) {
+                switch (src[tok.loc.idx + 1]) {
                 case '>':
                     tok.kind = TOKEN_RIGHT_ARROW;
                     tok.len = 2;
@@ -108,7 +112,7 @@ lex(char *src, size_t src_len, size_t from_idx) {
         case '_':
         case 'A' ... 'Z':
         case 'a' ... 'z':
-            i = tok.idx + 1;
+            i = tok.loc.idx + 1;
             while (i < src_len) {
                 switch (src[i]) {
                 case '_':
@@ -120,16 +124,16 @@ lex(char *src, size_t src_len, size_t from_idx) {
                 }
                 break;
             }
-            tok.len = i - tok.idx;
+            tok.len = i - tok.loc.idx;
             switch (tok.len) {
             case 2:
-                if (strncmp(src + tok.idx, "fn", 2) == 0) {
+                if (strncmp(src + tok.loc.idx, "fn", 2) == 0) {
                     tok.kind = TOKEN_KEYWORD_FN;
                     return tok;
                 }
                 break;
             case 3:
-                if (strncmp(src + tok.idx, "let", 3) == 0) {
+                if (strncmp(src + tok.loc.idx, "let", 3) == 0) {
                     tok.kind = TOKEN_KEYWORD_LET;
                     return tok;
                 }
@@ -138,7 +142,7 @@ lex(char *src, size_t src_len, size_t from_idx) {
             tok.kind = TOKEN_IDENT;
             return tok;
         case '0' ... '9':
-            i = tok.idx + 1;
+            i = tok.loc.idx + 1;
             while (i < src_len) {
                 switch (src[i]) {
                 case '_':
@@ -149,7 +153,7 @@ lex(char *src, size_t src_len, size_t from_idx) {
                 break;
             }
             tok.kind = TOKEN_LITERAL;
-            tok.len = i - tok.idx;
+            tok.len = i - tok.loc.idx;
             return tok;
         }
         tok.kind = TOKEN_UNKNOWN;
@@ -165,13 +169,17 @@ push_token(struct context *ctx, struct token tok) {
     assert(ctx->token_count < MAX_TOKEN_LOOKAHEAD);
     ctx->tokens[(ctx->token_offset + ctx->token_count) % MAX_TOKEN_LOOKAHEAD] = tok;
     ctx->token_count += 1;
-    ctx->src_idx = tok.idx + tok.len;
+    ctx->src_loc = (struct location){
+        .idx = tok.loc.idx + tok.len,
+        .line = tok.loc.line,
+        .col = tok.loc.col + tok.len,
+    };
 }
 
 static void
 fill_tokens(struct context *ctx) {
     while (ctx->token_count < MAX_TOKEN_LOOKAHEAD) {
-        struct token tok = lex(ctx->src, ctx->src_len, ctx->src_idx);
+        struct token tok = lex(ctx->src, ctx->src_len, ctx->src_loc);
         push_token(ctx, tok);
     }
 }
@@ -205,7 +213,7 @@ static struct str
 get_token_line(struct context *ctx, struct token tok) {
     size_t idx = 0;
     size_t line = 1;
-    while (line < tok.line) {
+    while (line < tok.loc.line) {
         switch (ctx->src[idx]) {
         case '\n':
             idx += 1;
@@ -230,11 +238,11 @@ eprint_token_line(struct context *ctx, struct token tok) {
         " --> %s:%zu:%zu\n"
         "  |\n"
         "  | %.*s\n",
-        ctx->input_file_path, tok.line, tok.col,
+        ctx->input_file_path, tok.loc.line, tok.loc.col,
         (int)token_line.len, token_line.ptr
     );
     fprintf(stderr, "  | ");
-    for (size_t i = 0; i < tok.col - 1; i++) {
+    for (size_t i = 0; i < tok.loc.col - 1; i++) {
         if (token_line.ptr[i] == '\t') {
             fputc('\t', stderr);
         } else {
@@ -377,7 +385,7 @@ compile_let_stmnt(struct context *ctx) {
     struct token tok;
     expect(ctx, TOKEN_IDENT, &tok);
     expect(ctx, TOKEN_EQUAL, NULL);
-    emit_fn_prologue(ctx, ctx->src + tok.idx, tok.len);
+    emit_fn_prologue(ctx, ctx->src + tok.loc.idx, tok.len);
     compile_expr(ctx);
     emit_fn_epilogue(ctx);
     expect(ctx, TOKEN_SEMICOLON, NULL);
@@ -417,7 +425,7 @@ compile_fn_call(struct context *ctx) {
     expect(ctx, TOKEN_IDENT, &tok);
     expect(ctx, TOKEN_LEFT_PAREN, NULL);
     expect(ctx, TOKEN_RIGHT_PAREN, NULL);
-    emit_fn_call(ctx, ctx->src + tok.idx, tok.len);
+    emit_fn_call(ctx, ctx->src + tok.loc.idx, tok.len);
 }
 
 static void
@@ -426,7 +434,7 @@ compile_literal(struct context *ctx) {
     expect(ctx, TOKEN_LITERAL, &tok);
     char lit[MAX_INT_LITERAL_LEN];
     size_t lit_len;
-    if (remove_underscores(ctx->src + tok.idx, tok.len, lit, MAX_INT_LITERAL_LEN, &lit_len) == -1) {
+    if (remove_underscores(ctx->src + tok.loc.idx, tok.len, lit, MAX_INT_LITERAL_LEN, &lit_len) == -1) {
         eprint_int_literal_too_long(ctx, tok);
     }
     emit_int_literal(ctx, lit, lit_len);
@@ -526,6 +534,7 @@ main(int argc, char *argv[]) {
         .input_file_path = input_file_path,
         .src = (char *)mapped,
         .src_len = file_size,
+        .src_loc = { .idx = 0, .line = 1, .col = 1 },
     };
     compile_program(&ctx);
 

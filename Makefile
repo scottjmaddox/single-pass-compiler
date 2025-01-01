@@ -18,7 +18,7 @@ clean:
 	rm -f spc $(EXAMPLE_C_ASM_FILES) $(EXAMPLE_SPL_ASM_FILES) $(EXAMPLE_EXECUTABLES)
 
 spc: spc.c
-	clang -std=c99 -pedantic -Wall -Wno-gnu-case-range -o $@ $<
+	clang --debug -std=c99 -pedantic -Wall -Wno-gnu-case-range -o $@ $<
 
 examples: $(EXAMPLE_EXECUTABLES)
 
