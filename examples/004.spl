@@ -1,0 +1,4 @@
+// line comment 1
+let main = fn() -> i32 {
+    1_000 // line comment 2
+};

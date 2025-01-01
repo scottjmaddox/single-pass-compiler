@@ -92,6 +92,19 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.loc.line += 1;
             tok.loc.col = 1;
             continue;
+        case '/':
+            if (tok.loc.idx + 1 < src_len) {
+                switch (src[tok.loc.idx + 1]) {
+                case '/':
+                    i = tok.loc.idx + 2;
+                    while (i < src_len && src[i] != '\n') { i += 1; }
+                    tok.loc.col += i - tok.loc.idx;
+                    tok.loc.idx = i;
+                    continue;
+                }
+            }
+            tok.kind = TOKEN_UNKNOWN;
+            return tok;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
         case ';': tok.kind = TOKEN_SEMICOLON; return tok;

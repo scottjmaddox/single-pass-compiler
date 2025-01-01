@@ -37,6 +37,8 @@ ident_rest = ident_start | digit;
 literal_start = digit;
 literal_rest = "_" | digit;
 digit = "0" .. "9" ;
+
+line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
 
 ## References
@@ -49,7 +51,8 @@ digit = "0" .. "9" ;
 
 - [x] minimal single-pass-compiled and running program (main function returning a literal)
 - [x] support parameter-free function calls
-- [ ] comments
+- [x] line comments
+- [ ] negative integer literals
 - [ ] arithmetic
 - [ ] local variables
 - [ ] references
