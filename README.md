@@ -25,17 +25,17 @@ program = { stmnt } ;
 stmnt = let_stmnt ;
 let_stmnt = "let" ident "=" fn_def ";" ;
 fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
-expr = literal | fn_call ;
+expr = int_literal | fn_call | prefix_op_expr;
 fn_call = ident "(" ")" ;
 type_expr = ident ;
 
-ident = ident_start { ident_rest } ;
-literal = literal_start { literal_rest } ;
+prefix_op_expr = "-" expr ;
 
-ident_start = "_" | "A" .. "Z" | "a" .. "z" ;
-ident_rest = ident_start | digit;
-literal_start = digit;
-literal_rest = "_" | digit;
+ident = alpha { alphanumeric } ;
+int_literal = [ "-" ] digit { "_" | digit } ;
+
+alphanumeric = alpha | digit ;
+alpha = "_" | "A" .. "Z" | "a" .. "z" ;
 digit = "0" .. "9" ;
 
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
@@ -52,7 +52,7 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] minimal single-pass-compiled and running program (main function returning a literal)
 - [x] support parameter-free function calls
 - [x] line comments
-- [ ] negative integer literals
+- [x] negative integer literals and negation
 - [ ] arithmetic
 - [ ] local variables
 - [ ] references

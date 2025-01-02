@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <fcntl.h>      // For open()
 #include <sys/mman.h>   // For mmap(), munmap()
 #include <sys/stat.h>   // For fstat()
@@ -15,6 +16,7 @@ enum TOKEN {
     TOKEN_EOF = 0,
     TOKEN_LEFT_PAREN,
     TOKEN_RIGHT_PAREN,
+    TOKEN_MINUS,
     TOKEN_SEMICOLON,
     TOKEN_EQUAL,
     TOKEN_LEFT_BRACE,
@@ -23,7 +25,7 @@ enum TOKEN {
     TOKEN_KEYWORD_FN,
     TOKEN_KEYWORD_LET,
     TOKEN_IDENT,
-    TOKEN_LITERAL,
+    TOKEN_INT_LITERAL,
     TOKEN_UNKNOWN,
 };
 
@@ -31,6 +33,7 @@ static char *TOKEN_NAMES[] = {
     "EOF",
     "LEFT_PAREN",
     "RIGHT_PAREN",
+    "MINUS",
     "SEMICOLON",
     "EQUAL",
     "LEFT_BRACE",
@@ -76,6 +79,20 @@ struct context {
 // Lexical analysis //
 //////////////////////
 
+static size_t
+scan_int_literal_rest(char *src, size_t src_len, size_t idx) {
+    while (idx < src_len) {
+        switch (src[idx]) {
+        case '_':
+        case '0' ... '9':
+            idx += 1;
+            continue;
+        }
+        break;
+    }
+    return idx;
+}
+
 static struct token
 lex(char *src, size_t src_len, struct location from_loc) {
     struct token tok = { .kind = TOKEN_UNKNOWN, .len = 1, .loc = from_loc };
@@ -107,10 +124,6 @@ lex(char *src, size_t src_len, struct location from_loc) {
             return tok;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
-        case ';': tok.kind = TOKEN_SEMICOLON; return tok;
-        case '=': tok.kind = TOKEN_EQUAL; return tok;
-        case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
-        case '}': tok.kind = TOKEN_RIGHT_BRACE; return tok;
         case '-':
             if (tok.loc.idx + 1 < src_len) {
                 switch (src[tok.loc.idx + 1]) {
@@ -118,10 +131,19 @@ lex(char *src, size_t src_len, struct location from_loc) {
                     tok.kind = TOKEN_RIGHT_ARROW;
                     tok.len = 2;
                     return tok;
+                case '0' ... '9':
+                    i = scan_int_literal_rest(src, src_len, tok.loc.idx + 2);
+                    tok.kind = TOKEN_INT_LITERAL;
+                    tok.len = i - tok.loc.idx;
+                    return tok;
                 }
             }
-            tok.kind = TOKEN_UNKNOWN;
+            tok.kind = TOKEN_MINUS;
             return tok;
+        case ';': tok.kind = TOKEN_SEMICOLON; return tok;
+        case '=': tok.kind = TOKEN_EQUAL; return tok;
+        case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
+        case '}': tok.kind = TOKEN_RIGHT_BRACE; return tok;
         case '_':
         case 'A' ... 'Z':
         case 'a' ... 'z':
@@ -155,17 +177,8 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_IDENT;
             return tok;
         case '0' ... '9':
-            i = tok.loc.idx + 1;
-            while (i < src_len) {
-                switch (src[i]) {
-                case '_':
-                case '0' ... '9':
-                    i += 1;
-                    continue;
-                }
-                break;
-            }
-            tok.kind = TOKEN_LITERAL;
+            i = scan_int_literal_rest(src, src_len, tok.loc.idx + 1);
+            tok.kind = TOKEN_INT_LITERAL;
             tok.len = i - tok.loc.idx;
             return tok;
         }
@@ -209,7 +222,7 @@ take_token(struct context *ctx, struct token* token) {
 // peek_token_kind_at(struct context *ctx, size_t i) {
 //     assert(i < MAX_TOKEN_LOOKAHEAD);
 //     if (i >= ctx->token_count) { fill_tokens(ctx); }
-//     return ctx->token_kinds[(ctx->token_offset + i) % MAX_TOKEN_LOOKAHEAD];
+//     return ctx->tokens[(ctx->token_offset + i) % MAX_TOKEN_LOOKAHEAD].kind;
 // }
 
 static enum TOKEN
@@ -292,7 +305,7 @@ eprint_int_literal_too_long(struct context *ctx, struct token tok) {
 }
 
 static void
-expect(struct context *ctx, enum TOKEN token_kind, struct token *tok_out) {
+take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN token_kind) {
     struct token tok;
     take_token(ctx, &tok);
     if (tok.kind != token_kind) {
@@ -346,7 +359,20 @@ emit_fn_prologue(struct context *ctx, char *name, size_t name_len) {
 }
 
 static void
-emit_fn_epilogue(struct context *ctx) {
+emit_push(struct context *ctx, char *reg) {
+    // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
+    fprintf(ctx->output_file, "\tstr\t%s, [sp, #-16]!\n", reg);
+}
+
+static void
+emit_pop(struct context *ctx, char *reg) {
+    // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
+    fprintf(ctx->output_file, "\tldr\t%s, [sp], #16\n", reg);
+}
+
+static void
+emit_fn_epilogue(struct context *ctx, bool has_return_value) {
+    if (has_return_value) { emit_pop(ctx, "w0"); }
     fprintf(ctx->output_file,
         "\n"
         "\tldp\tx29, x30, [sp], #16\n"
@@ -356,22 +382,33 @@ emit_fn_epilogue(struct context *ctx) {
 }
 
 static void
-emit_fn_call(struct context *ctx, char *name, size_t name_len) {
+emit_fn_call(struct context *ctx, char *name, size_t name_len, bool has_return_value) {
     fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
+    if (has_return_value) { emit_push(ctx, "w0"); }
+}
+
+static void
+emit_negate(struct context *ctx) {
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tneg\tw0, w0\n");
+    emit_push(ctx, "w0");
 }
 
 static void
 emit_int_literal(struct context *ctx, char *lit, size_t lit_len) {
-    fprintf(ctx->output_file, "\tmov\tw0, #%.*s\n", (int)lit_len, lit);
+    // push the literal onto the stack
+    fprintf(ctx->output_file, "\tldr\tw0, =%.*s\n", (int)lit_len, lit);
+    emit_push(ctx, "w0");
 }
 
 static void compile_program(struct context *ctx);
 static void compile_stmnt(struct context *ctx);
 static void compile_let_stmnt(struct context *ctx);
-static void compile_fn_def(struct context *ctx);
+static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static void compile_expr(struct context *ctx);
+static void compile_neg_expr(struct context *ctx);
 static void compile_fn_call(struct context *ctx);
-static void compile_literal(struct context *ctx);
+static void compile_int_literal(struct context *ctx, bool negate);
 
 static void
 compile_program(struct context *ctx) {
@@ -394,40 +431,57 @@ compile_stmnt(struct context *ctx) {
 static void
 compile_let_stmnt(struct context *ctx) {
     // EBNF: let_stmnt = "let" ident "=" fn_def ";" ;
-    expect(ctx, TOKEN_KEYWORD_LET, NULL);
-    struct token tok;
-    expect(ctx, TOKEN_IDENT, &tok);
-    expect(ctx, TOKEN_EQUAL, NULL);
-    emit_fn_prologue(ctx, ctx->src + tok.loc.idx, tok.len);
-    compile_expr(ctx);
-    emit_fn_epilogue(ctx);
-    expect(ctx, TOKEN_SEMICOLON, NULL);
+    take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
+    struct token name_tok;
+    take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
+    take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
+    compile_fn_def(ctx, &name_tok);
+    take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON);
 }
 
 static void
-compile_fn_def(struct context *ctx) {
+compile_fn_def(struct context *ctx, struct token *name_tok) {
     // EBNF: fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
-    expect(ctx, TOKEN_KEYWORD_FN, NULL);
-    expect(ctx, TOKEN_LEFT_PAREN, NULL);
-    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
-    expect(ctx, TOKEN_RIGHT_ARROW, NULL);
+    take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_FN);
+    take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
+    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
+    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_ARROW);
     // TODO: support arbitrary type expressions
-    struct token tok;
-    expect(ctx, TOKEN_IDENT, &tok);
+    struct token type_tok;
+    take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
     // TODO: intern the type, and type check
-    expect(ctx, TOKEN_LEFT_BRACE, NULL);
+    take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
+    emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
     compile_expr(ctx);
-    expect(ctx, TOKEN_RIGHT_BRACE, NULL);
+    // TODO: support optional return value
+    bool has_return_value = true;
+    emit_fn_epilogue(ctx, has_return_value);
+    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
 }
 
 static void
 compile_expr(struct context *ctx) {
-    // EBNF: expr = literal | fn_call ;
+    // EBNF: expr = int_literal | fn_call | prefix_op_expr;
+    // EBNF: prefix_op_expr = "-" expr ;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_LITERAL: compile_literal(ctx); break;
+    case TOKEN_MINUS: compile_neg_expr(ctx); break;
+    case TOKEN_INT_LITERAL: compile_int_literal(ctx, false); break;
     case TOKEN_IDENT: compile_fn_call(ctx); break;
-    case TOKEN_KEYWORD_FN: compile_fn_def(ctx); break;
-    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_LITERAL, TOKEN_IDENT, TOKEN_KEYWORD_FN}, 3);
+    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_INT_LITERAL, TOKEN_IDENT, TOKEN_KEYWORD_FN}, 3);
+    }
+}
+
+static void
+compile_neg_expr(struct context *ctx) {
+    take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
+    bool negate = true;
+    while (peek_token_kind(ctx) == TOKEN_MINUS) {
+        take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
+        negate = !negate;
+    }
+    compile_expr(ctx);
+    if (negate) {
+        emit_negate(ctx);
     }
 }
 
@@ -435,19 +489,28 @@ static void
 compile_fn_call(struct context *ctx) {
     // EBNF: fn_call = ident "(" ")" ;
     struct token tok;
-    expect(ctx, TOKEN_IDENT, &tok);
-    expect(ctx, TOKEN_LEFT_PAREN, NULL);
-    expect(ctx, TOKEN_RIGHT_PAREN, NULL);
-    emit_fn_call(ctx, ctx->src + tok.loc.idx, tok.len);
+    take_token_expect_kind(ctx, &tok, TOKEN_IDENT);
+    take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
+    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
+    // TODO: support optional return value
+    bool has_return_value = true;
+    emit_fn_call(ctx, ctx->src + tok.loc.idx, tok.len, has_return_value);
 }
 
 static void
-compile_literal(struct context *ctx) {
+compile_int_literal(struct context *ctx, bool negate) {
     struct token tok;
-    expect(ctx, TOKEN_LITERAL, &tok);
+    take_token_expect_kind(ctx, &tok, TOKEN_INT_LITERAL);
     char lit[MAX_INT_LITERAL_LEN];
     size_t lit_len;
-    if (remove_underscores(ctx->src + tok.loc.idx, tok.len, lit, MAX_INT_LITERAL_LEN, &lit_len) == -1) {
+    char *out = lit;
+    size_t out_cap = MAX_INT_LITERAL_LEN;
+    if (negate) {
+        lit[0] = '-';
+        out += 1;
+        out_cap -= 1;
+    }
+    if (remove_underscores(ctx->src + tok.loc.idx, tok.len, out, out_cap, &lit_len) == -1) {
         eprint_int_literal_too_long(ctx, tok);
     }
     emit_int_literal(ctx, lit, lit_len);
