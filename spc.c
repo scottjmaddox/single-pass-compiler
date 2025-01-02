@@ -356,6 +356,11 @@ emit_program_prologue(struct context *ctx) {
 }
 
 static void
+emit_program_epilogue(struct context *ctx) {
+    fprintf(ctx->output_file, "\n.subsections_via_symbols\n");
+}
+
+static void
 emit_fn_prologue(struct context *ctx, char *name, size_t name_len) {
     fprintf(ctx->output_file,
         "\n"
@@ -471,6 +476,7 @@ compile_program(struct context *ctx) {
     while (peek_token_kind(ctx) != TOKEN_EOF) {
         compile_stmnt(ctx);
     }
+    emit_program_epilogue(ctx);
 }
 
 static void
