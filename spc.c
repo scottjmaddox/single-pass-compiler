@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <fcntl.h>      // For open()
-#include <sys/mman.h>   // For mmap(), munmap()
-#include <sys/stat.h>   // For fstat()
-#include <unistd.h>     // For getopt(), close()
-#include <errno.h>      // For errno
-#include <string.h>     // For strerror()
-#include <assert.h>     // For assert()
+#include <fcntl.h>         // For open()
+#include <sys/mman.h>      // For mmap(), munmap()
+#include <sys/stat.h>      // For fstat()
+#include <sys/syslimits.h> // For PATH_MAX
+#include <unistd.h>        // For getopt(), close()
+#include <errno.h>         // For errno
+#include <string.h>        // For strerror()
+#include <assert.h>        // For assert()
 
 #define MAX_TOKEN_LOOKAHEAD 2
 #define MAX_INT_LITERAL_LEN 64
@@ -630,30 +631,25 @@ compile_int_literal(struct context *ctx, bool negate) {
 // Entry point //
 /////////////////
 
-char *
-get_default_output_file_path(const char *input_file_path) {
+void // output_file_path should have capacity PATH_MAX + 1
+get_default_output_file_path(const char *input_file_path, char *output_file_path) {
     // Find the last dot in input_file_path
     char *dot = strrchr(input_file_path, '.');
     // Calculate the length of the base name
     size_t base_len = dot ? (size_t)(dot - input_file_path) : strlen(input_file_path);
-    // Allocate memory for the new file path
-    char *output_file_path = malloc(base_len + 3); // +3 for `.s\0`
-    if (!output_file_path) {
-        perror("malloc");
-        exit(EXIT_FAILURE);
-    }
+    assert(base_len + 2 <= PATH_MAX);
     // Copy the base name
     strncpy(output_file_path, input_file_path, base_len);
     output_file_path[base_len] = '\0';
     // Append the new extension
     strcat(output_file_path, ".s");
-    return output_file_path;
 }
 
 int
 main(int argc, char *argv[]) {
     // Parse command line options
     int opt;
+    char output_file_path_buf[PATH_MAX + 1];
     char *output_file_path = NULL;
     while ((opt = getopt(argc, argv, "o:")) != -1) {
         switch(opt) {
@@ -676,7 +672,8 @@ main(int argc, char *argv[]) {
     }
     char *input_file_path = argv[optind];
     if (output_file_path == NULL) {
-        output_file_path = get_default_output_file_path(input_file_path);
+        get_default_output_file_path(input_file_path, output_file_path_buf);
+        output_file_path = output_file_path_buf;
     }
 
     // Open the input file
