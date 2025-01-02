@@ -23,7 +23,7 @@ spc: spc.c
 examples: $(EXAMPLE_EXECUTABLES)
 
 examples/%-c: examples/%-c.s
-	clang -o $@ $<
+	clang -O0 -o $@ $<
 
 examples/%-spl: examples/%-spl.s
 	clang -o $@ $<

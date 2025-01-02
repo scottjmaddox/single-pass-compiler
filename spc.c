@@ -14,9 +14,13 @@
 
 enum TOKEN {
     TOKEN_EOF = 0,
+    TOKEN_PERCENT,
     TOKEN_LEFT_PAREN,
     TOKEN_RIGHT_PAREN,
+    TOKEN_ASTERISK,
+    TOKEN_PLUS,
     TOKEN_MINUS,
+    TOKEN_SLASH,
     TOKEN_SEMICOLON,
     TOKEN_EQUAL,
     TOKEN_LEFT_BRACE,
@@ -31,9 +35,13 @@ enum TOKEN {
 
 static char *TOKEN_NAMES[] = {
     "EOF",
+    "PERCENT",
     "LEFT_PAREN",
     "RIGHT_PAREN",
+    "ASTERISK",
+    "PLUS",
     "MINUS",
+    "SLASH",
     "SEMICOLON",
     "EQUAL",
     "LEFT_BRACE",
@@ -109,21 +117,11 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.loc.line += 1;
             tok.loc.col = 1;
             continue;
-        case '/':
-            if (tok.loc.idx + 1 < src_len) {
-                switch (src[tok.loc.idx + 1]) {
-                case '/':
-                    i = tok.loc.idx + 2;
-                    while (i < src_len && src[i] != '\n') { i += 1; }
-                    tok.loc.col += i - tok.loc.idx;
-                    tok.loc.idx = i;
-                    continue;
-                }
-            }
-            tok.kind = TOKEN_UNKNOWN;
-            return tok;
+        case '%': tok.kind = TOKEN_PERCENT; return tok;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
+        case '+': tok.kind = TOKEN_PLUS; return tok;
+        case '*': tok.kind = TOKEN_ASTERISK; return tok;
         case '-':
             if (tok.loc.idx + 1 < src_len) {
                 switch (src[tok.loc.idx + 1]) {
@@ -139,6 +137,20 @@ lex(char *src, size_t src_len, struct location from_loc) {
                 }
             }
             tok.kind = TOKEN_MINUS;
+            return tok;
+        case '/':
+            if (tok.loc.idx + 1 < src_len) {
+                switch (src[tok.loc.idx + 1]) {
+                case '/':
+                    // line comment
+                    i = tok.loc.idx + 2;
+                    while (i < src_len && src[i] != '\n') { i += 1; }
+                    tok.loc.col += i - tok.loc.idx;
+                    tok.loc.idx = i;
+                    continue;
+                }
+            }
+            tok.kind = TOKEN_SLASH;
             return tok;
         case ';': tok.kind = TOKEN_SEMICOLON; return tok;
         case '=': tok.kind = TOKEN_EQUAL; return tok;
@@ -395,6 +407,48 @@ emit_negate(struct context *ctx) {
 }
 
 static void
+emit_add(struct context *ctx) {
+    emit_pop(ctx, "w1");
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tadd\tw0, w0, w1\n");
+    emit_push(ctx, "w0");
+}
+
+static void
+emit_sub(struct context *ctx) {
+    emit_pop(ctx, "w1");
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tsub\tw0, w0, w1\n");
+    emit_push(ctx, "w0");
+}
+
+static void
+emit_mul(struct context *ctx) {
+    emit_pop(ctx, "w1");
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tmul\tw0, w0, w1\n");
+    emit_push(ctx, "w0");
+}
+
+static void
+emit_div(struct context *ctx) {
+    emit_pop(ctx, "w1");
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tsdiv\tw0, w0, w1\n");
+    emit_push(ctx, "w0");
+}
+
+static void
+emit_rem(struct context *ctx) {
+    emit_pop(ctx, "w1");
+    emit_pop(ctx, "w0");
+	fprintf(ctx->output_file, "\tsdiv\tw2, w0, w1\n");
+	fprintf(ctx->output_file, "\tmul\tw2, w2, w1\n");
+	fprintf(ctx->output_file, "\tsub\tw0, w0, w2\n");
+    emit_push(ctx, "w0");
+}
+
+static void
 emit_int_literal(struct context *ctx, char *lit, size_t lit_len) {
     // push the literal onto the stack
     fprintf(ctx->output_file, "\tldr\tw0, =%.*s\n", (int)lit_len, lit);
@@ -405,7 +459,7 @@ static void compile_program(struct context *ctx);
 static void compile_stmnt(struct context *ctx);
 static void compile_let_stmnt(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
-static void compile_expr(struct context *ctx);
+static void compile_expr(struct context *ctx, int min_binding_power);
 static void compile_neg_expr(struct context *ctx);
 static void compile_fn_call(struct context *ctx);
 static void compile_int_literal(struct context *ctx, bool negate);
@@ -452,7 +506,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // TODO: intern the type, and type check
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
     emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
-    compile_expr(ctx);
+    compile_expr(ctx, 0);
     // TODO: support optional return value
     bool has_return_value = true;
     emit_fn_epilogue(ctx, has_return_value);
@@ -460,14 +514,53 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
 }
 
 static void
-compile_expr(struct context *ctx) {
-    // EBNF: expr = int_literal | fn_call | prefix_op_expr;
-    // EBNF: prefix_op_expr = "-" expr ;
+compile_expr(struct context *ctx, int min_binding_power) {
+    // EBNF:
+    // expr = "(" expr ")" | prefix_op_expr | int_literal | fn_call | infix_op_expr ;
+    // infix_op_expr = expr "+" expr | expr "-" expr | expr "*" expr | expr "/" expr | expr "%" expr ;
+    // prefix_op_expr = "-" expr ;
     switch (peek_token_kind(ctx)) {
+    case TOKEN_LEFT_PAREN: {
+        take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
+        compile_expr(ctx, 0);
+        take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
+        break;
+    }
     case TOKEN_MINUS: compile_neg_expr(ctx); break;
     case TOKEN_INT_LITERAL: compile_int_literal(ctx, false); break;
     case TOKEN_IDENT: compile_fn_call(ctx); break;
     default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_INT_LITERAL, TOKEN_IDENT, TOKEN_KEYWORD_FN}, 3);
+    }
+    for (;;) {
+        int left_binding_power, right_binding_power;
+        switch (peek_token_kind(ctx)) {
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:
+            left_binding_power = 1;
+            right_binding_power = 2;
+            break;
+        case TOKEN_ASTERISK:
+        case TOKEN_SLASH:
+        case TOKEN_PERCENT:
+            left_binding_power = 3;
+            right_binding_power = 4;
+            break;
+        default: return;
+        }
+        if (left_binding_power < min_binding_power) {
+            break;
+        }
+        struct token tok;
+        take_token(ctx, &tok);
+        compile_expr(ctx, right_binding_power);
+        switch (tok.kind) {
+        case TOKEN_PLUS: emit_add(ctx); break;
+        case TOKEN_MINUS: emit_sub(ctx); break;
+        case TOKEN_ASTERISK: emit_mul(ctx); break;
+        case TOKEN_SLASH: emit_div(ctx); break;
+        case TOKEN_PERCENT: emit_rem(ctx); break;
+        default: assert(!"unreachable");
+        }
     }
 }
 
@@ -479,7 +572,8 @@ compile_neg_expr(struct context *ctx) {
         take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
         negate = !negate;
     }
-    compile_expr(ctx);
+    int right_binding_power = 5;
+    compile_expr(ctx, right_binding_power);
     if (negate) {
         emit_negate(ctx);
     }

@@ -25,10 +25,15 @@ program = { stmnt } ;
 stmnt = let_stmnt ;
 let_stmnt = "let" ident "=" fn_def ";" ;
 fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
-expr = int_literal | fn_call | prefix_op_expr;
+expr = "(" expr ")" | prefix_op_expr | int_literal | fn_call | infix_op_expr ;
 fn_call = ident "(" ")" ;
 type_expr = ident ;
 
+infix_op_expr = expr "+" expr
+              | expr "-" expr
+              | expr "*" expr
+              | expr "/" expr
+              | expr "%" expr ;
 prefix_op_expr = "-" expr ;
 
 ident = alpha { alphanumeric } ;
@@ -43,6 +48,7 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 
 ## References
 
+- [Arm A-profile A64 Instruction Set Architecture](https://developer.arm.com/documentation/ddi0602/latest/?lang=en)
 - [Simple but Powerful Pratt Parsing](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html)
 - [HelloSilicon](https://github.com/below/HelloSilicon)
 - [A Gentle Introduction to Assembly Language Programming](https://github.com/pkivolowitz/asm_book)
@@ -53,7 +59,7 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] support parameter-free function calls
 - [x] line comments
 - [x] negative integer literals and negation
-- [ ] arithmetic
+- [x] arithmetic
 - [ ] local variables
 - [ ] references
 - [ ] type checking
