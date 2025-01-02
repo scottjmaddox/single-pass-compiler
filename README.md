@@ -55,13 +55,27 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 
 ## TODO
 
-- [x] minimal single-pass-compiled and running program (main function returning a literal)
+- [x] minimal single-pass-compiled and running program (main function returning an i32 literal)
 - [x] support parameter-free function calls
 - [x] line comments
 - [x] negative integer literals and negation
-- [x] arithmetic
+- [x] arithmetic operators: `+`, `-`, `*`, `/`, `%`
+- [ ] comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- [ ] support one-parameter function calls
+- [ ] assert function
+- [ ] logical operators: `&&`, `||`, `!`
+- [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
+- [ ] reference types
+- [ ] string literals
+- [ ] printing via printf
 - [ ] local variables
-- [ ] references
+- [ ] u8 type
 - [ ] type checking
-- [ ] add u8 type and type conversion
+- [ ] type conversion
+- [ ] bool type
+- [ ] boolean arithmetic
+- [ ] if/else branches
+- [ ] unconditional loops, continue, and break
+- [ ] output to stdout on `-o -`
+- [ ] `-g` / `--debug` option
 - [ ] write to tmp file then move into place on success?
