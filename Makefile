@@ -26,10 +26,10 @@ examples/%-c: examples/%-c.s
 	clang -O0 -o $@ $<
 
 examples/%-spl: examples/%-spl.s
-	clang -o $@ $<
+	clang -O0 -o $@ $<
 
 examples/%-c.s: examples/%.c
-	clang -S -o $@ $<
+	clang -O0 -S -o $@ $<
 
 examples/%-spl.s: examples/%.spl spc
 	./spc -o $@ $<

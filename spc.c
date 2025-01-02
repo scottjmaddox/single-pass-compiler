@@ -292,10 +292,10 @@ eprint_token_line(struct context *ctx, struct token tok) {
 }
 
 static void
-eprint_expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
+eprint_expected_token_kinds(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
     struct token tok;
     take_token(ctx, &tok);
-    fprintf(stderr, "error: unexpected token %s\n", TOKEN_NAMES[tok.kind]);
+    fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
     eprint_token_line(ctx, tok);
     fprintf(stderr, "Expected one of: ");
     for (size_t i = 0; i < token_kinds_len; i++) {
@@ -305,6 +305,16 @@ eprint_expected(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds
         }
     }
     fprintf(stderr, "\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
+eprint_expected(struct context *ctx, char *str) {
+    struct token tok;
+    take_token(ctx, &tok);
+    fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
+    eprint_token_line(ctx, tok);
+    fprintf(stderr, "Expected %s.\n", str);
     exit(EXIT_FAILURE);
 }
 
@@ -321,7 +331,7 @@ take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN to
     struct token tok;
     take_token(ctx, &tok);
     if (tok.kind != token_kind) {
-        eprint_expected(ctx, &token_kind, 1);
+        eprint_expected_token_kinds(ctx, &token_kind, 1);
     }
     if (tok_out != NULL) {
         *tok_out = tok;
@@ -484,7 +494,7 @@ compile_stmnt(struct context *ctx) {
     // EBNF: stmnt = let_stmnt ;
     switch (peek_token_kind(ctx)) {
     case TOKEN_KEYWORD_LET: compile_let_stmnt(ctx); break;
-    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_KEYWORD_LET}, 1);
+    default: eprint_expected(ctx, "a let statement");
     }
 }
 
@@ -535,7 +545,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
     case TOKEN_MINUS: compile_neg_expr(ctx); break;
     case TOKEN_INT_LITERAL: compile_int_literal(ctx, false); break;
     case TOKEN_IDENT: compile_fn_call(ctx); break;
-    default: eprint_expected(ctx, (enum TOKEN[]){TOKEN_INT_LITERAL, TOKEN_IDENT, TOKEN_KEYWORD_FN}, 3);
+    default: eprint_expected(ctx, "an expression");
     }
     for (;;) {
         int left_binding_power, right_binding_power;
@@ -672,33 +682,30 @@ main(int argc, char *argv[]) {
     // Open the input file
     int fd = open(input_file_path, O_RDONLY);
     if (fd == -1) {
-        fprintf(stderr, "Error opening file '%s': %s\n", input_file_path, strerror(errno));
+        fprintf(stderr, "internal compiler error while opening file '%s': %s\n", input_file_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
     // Get the input file size
     struct stat sb;
     if (fstat(fd, &sb) == -1) {
-        fprintf(stderr, "Error getting file size for '%s': %s\n", input_file_path, strerror(errno));
-        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno)); }
+        fprintf(stderr, "internal compiler error while getting file size for '%s': %s\n", input_file_path, strerror(errno));
+        if (close(fd) == -1) { fprintf(stderr, "internal compiler error while closing file '%s': %s\n", input_file_path, strerror(errno)); }
         exit(EXIT_FAILURE);
     }
-    if (sb.st_size == 0) {
-        fprintf(stderr, "Error: file '%s' is empty.\n", input_file_path);
-        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno)); }
-        exit(EXIT_FAILURE);
-    }
-    size_t file_size = sb.st_size;
-
-    // Memory-map the input file
-    void *mapped = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (mapped == MAP_FAILED) {
-        fprintf(stderr, "Error mapping file '%s': %s\n", input_file_path, strerror(errno));
-        if (close(fd) == -1) { fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno)); }
-        exit(EXIT_FAILURE);
+    size_t input_file_size = sb.st_size;
+    void *mapped_input_file = NULL;
+    if (input_file_size != 0) {
+        // Memory-map the input file
+        mapped_input_file = mmap(NULL, input_file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (mapped_input_file == MAP_FAILED) {
+            fprintf(stderr, "internal compiler error while mapping file '%s': %s\n", input_file_path, strerror(errno));
+            if (close(fd) == -1) { fprintf(stderr, "internal compiler error while closing file '%s': %s\n", input_file_path, strerror(errno)); }
+            exit(EXIT_FAILURE);
+        }
     }
     if (close(fd) == -1) {
-        fprintf(stderr, "Error closing file '%s': %s\n", input_file_path, strerror(errno));
+        fprintf(stderr, "internal compiler error while closing file '%s': %s\n", input_file_path, strerror(errno));
         // Continue even if close fails
     }
 
@@ -708,21 +715,21 @@ main(int argc, char *argv[]) {
     struct context ctx = {
         .output_file = output_file,
         .input_file_path = input_file_path,
-        .src = (char *)mapped,
-        .src_len = file_size,
+        .src = (char *)mapped_input_file,
+        .src_len = input_file_size,
         .src_loc = { .idx = 0, .line = 1, .col = 1 },
     };
     compile_program(&ctx);
 
     // Close the output file
     if (fclose(output_file) == EOF) {
-        fprintf(stderr, "Error closing file '%s': %s\n", output_file_path, strerror(errno));
+        fprintf(stderr, "internal compiler error while closing file '%s': %s\n", output_file_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
     // Unmap the input file
-    if (munmap(mapped, file_size) == -1) {
-        fprintf(stderr, "Error unmapping file '%s': %s\n", input_file_path, strerror(errno));
+    if (mapped_input_file != NULL && munmap(mapped_input_file, input_file_size) == -1) {
+        fprintf(stderr, "internal compiler error while unmapping file '%s': %s\n", input_file_path, strerror(errno));
         exit(EXIT_FAILURE);
     }
     return 0;
