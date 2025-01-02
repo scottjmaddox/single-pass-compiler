@@ -25,16 +25,9 @@ program = { stmnt } ;
 stmnt = let_stmnt ;
 let_stmnt = "let" ident "=" fn_def ";" ;
 fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
-expr = "(" expr ")" | prefix_op_expr | int_literal | fn_call | infix_op_expr ;
+expr = "(" expr ")" | prefix_op expr | int_literal | fn_call | expr infix_op expr ;
 fn_call = ident "(" ")" ;
 type_expr = ident ;
-
-infix_op_expr = expr "+" expr
-              | expr "-" expr
-              | expr "*" expr
-              | expr "/" expr
-              | expr "%" expr ;
-prefix_op_expr = "-" expr ;
 
 ident = alpha { alphanumeric } ;
 int_literal = [ "-" ] digit { "_" | digit } ;
@@ -43,6 +36,9 @@ alphanumeric = alpha | digit ;
 alpha = "_" | "A" .. "Z" | "a" .. "z" ;
 digit = "0" .. "9" ;
 
+prefix_op = "-" ;
+infix_op = "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
 
@@ -50,6 +46,7 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 
 - [Arm A-profile A64 Instruction Set Architecture](https://developer.arm.com/documentation/ddi0602/latest/?lang=en)
 - [Simple but Powerful Pratt Parsing](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html)
+- [Wikipedia: Operators in C and C++: Operator precedence](https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence)
 - [HelloSilicon](https://github.com/below/HelloSilicon)
 - [A Gentle Introduction to Assembly Language Programming](https://github.com/pkivolowitz/asm_book)
 
@@ -60,7 +57,7 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] line comments
 - [x] negative integer literals and negation
 - [x] arithmetic operators: `+`, `-`, `*`, `/`, `%`
-- [ ] comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- [x] comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`
 - [ ] support one-parameter function calls
 - [ ] assert function
 - [ ] logical operators: `&&`, `||`, `!`
