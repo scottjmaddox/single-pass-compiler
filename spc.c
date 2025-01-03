@@ -598,8 +598,8 @@ emit_int_literal(struct context *ctx, char *lit, size_t lit_len) {
 }
 
 static void compile_program(struct context *ctx);
-static void compile_stmnt(struct context *ctx);
-static void compile_let_stmnt(struct context *ctx);
+static void compile_static_stmnt(struct context *ctx);
+static void compile_static_let_stmnt(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static void compile_expr(struct context *ctx, int min_binding_power);
 static void compile_prefix_op_expr(struct context *ctx);
@@ -608,26 +608,26 @@ static void compile_int_literal(struct context *ctx, bool negate);
 
 static void
 compile_program(struct context *ctx) {
-    // EBNF: program = { stmnt } ;
+    // EBNF: program = { static_stmnt } ;
     emit_program_prologue(ctx);
     while (peek_token_kind(ctx) != TOKEN_EOF) {
-        compile_stmnt(ctx);
+        compile_static_stmnt(ctx);
     }
     emit_program_epilogue(ctx);
 }
 
 static void
-compile_stmnt(struct context *ctx) {
-    // EBNF: stmnt = let_stmnt ;
+compile_static_stmnt(struct context *ctx) {
+    // EBNF: static_stmnt = static_let_stmnt ;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_KEYWORD_LET: compile_let_stmnt(ctx); break;
+    case TOKEN_KEYWORD_LET: compile_static_let_stmnt(ctx); break;
     default: eprint_expected(ctx, "a let statement");
     }
 }
 
 static void
-compile_let_stmnt(struct context *ctx) {
-    // EBNF: let_stmnt = "let" ident "=" fn_def ";" ;
+compile_static_let_stmnt(struct context *ctx) {
+    // EBNF: static_let_stmnt = "let" ident "=" fn_def ";" ;
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
@@ -638,7 +638,7 @@ compile_let_stmnt(struct context *ctx) {
 
 static void
 compile_fn_def(struct context *ctx, struct token *name_tok) {
-    // EBNF: fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
+    // EBNF: fn_def = "fn" "(" ")" "->" type_expr "{" { stmnt } expr "}" ;
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_FN);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
@@ -649,7 +649,15 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // TODO: intern the type, and type check
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
     emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
-    compile_expr(ctx, 0);
+    for (;;) {
+        compile_expr(ctx, 0);
+        if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
+            take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON);
+            emit_pop(ctx, "w0");
+        } else {
+            break;
+        }
+    }
     // TODO: support optional return value
     bool has_return_value = true;
     emit_fn_epilogue(ctx, has_return_value);
@@ -758,13 +766,20 @@ compile_prefix_op_expr(struct context *ctx) {
 static void
 compile_fn_call(struct context *ctx) {
     // EBNF: fn_call = ident "(" ")" ;
-    struct token tok;
-    take_token_expect_kind(ctx, &tok, TOKEN_IDENT);
+    struct token name_tok;
+    take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
+    char *name = ctx->src + name_tok.loc.idx;
+    size_t name_len = name_tok.len;
+    if (name_len == (sizeof "__builtin_trap" - 1)
+        && strncmp(name, "__builtin_trap", (sizeof "__builtin_trap" - 1)) == 0) {
+        fprintf(ctx->output_file, "\tbrk\t#0\n");
+        return;
+    }
     // TODO: support optional return value
     bool has_return_value = true;
-    emit_fn_call(ctx, ctx->src + tok.loc.idx, tok.len, has_return_value);
+    emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, has_return_value);
 }
 
 static void

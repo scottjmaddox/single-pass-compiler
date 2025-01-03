@@ -21,10 +21,11 @@ make examples
 The currently supported grammar, in extended Backus–Naur form (EBNF):
 
 ```ebnf
-program = { stmnt } ;
-stmnt = let_stmnt ;
-let_stmnt = "let" ident "=" fn_def ";" ;
-fn_def = "fn" "(" ")" "->" type_expr "{" expr "}" ;
+program = { static_stmnt } ;
+static_stmnt = static_let_stmnt ;
+static_let_stmnt = "let" ident "=" fn_def ";" ;
+fn_def = "fn" "(" ")" "->" type_expr "{" { stmnt } expr "}" ;
+stmnt = expr ";" ;
 expr = "(" expr ")" | prefix_op expr | int_literal | fn_call | expr infix_op expr ;
 fn_call = ident "(" ")" ;
 type_expr = ident ;
@@ -59,7 +60,8 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] arithmetic operators: `+`, `-`, `*`, `/`, `%`
 - [x] comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`
 - [x] logical operators: `&&`, `||`, `!`
-- [ ] `__builtin_trap` intrinsic and automated tests
+- [x] statements in functions; `__builtin_trap` intrinsic
+- [ ] automated tests
 - [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
 - [ ] push-pop annihilation
 - [ ] reference types
