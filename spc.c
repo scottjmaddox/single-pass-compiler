@@ -545,6 +545,13 @@ emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
 }
 
 static void
+emit_drop_type(struct context *ctx, enum TYPE ty) {
+    if (ty != TYPE_UNIT) {
+        emit_pop(ctx, "w0");
+    }
+}
+
+static void
 emit_fn_call(struct context *ctx, char *name, size_t name_len, bool has_return_value) {
     fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
     if (has_return_value) { emit_push(ctx, "w0"); }
@@ -689,12 +696,16 @@ static enum TYPE
 compile_block(struct context *ctx) {
     // EBNF: block = "{" { expr } "}" ;
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
-    enum TYPE return_type = TYPE_UNIT;
+    enum TYPE previous_return_type = TYPE_UNIT;
+    enum TYPE final_return_type  = TYPE_UNIT;
     while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
-        return_type = compile_expr(ctx, 0);
+        emit_drop_type(ctx, previous_return_type);
+        enum TYPE return_type = compile_expr(ctx, 0);
+        previous_return_type = final_return_type;
+        final_return_type = return_type;
     }
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
-    return return_type;
+    return final_return_type;
 }
 
 static enum TYPE
