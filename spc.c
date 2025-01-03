@@ -371,6 +371,16 @@ peek_token_kind(struct context *ctx) {
 // Diagnostics and Utilities //
 ///////////////////////////////
 
+static bool
+token_starts_with(struct context *ctx, struct token tok, char *str) {
+    return tok.len >= strlen(str) && strncmp(ctx->src + tok.loc.idx, str, strlen(str)) == 0;
+}
+
+static bool
+token_equals(struct context *ctx, struct token tok, char *str) {
+    return tok.len == strlen(str) && strncmp(ctx->src + tok.loc.idx, str, strlen(str)) == 0;
+}
+
 static struct str
 get_token_line(struct context *ctx, struct token tok) {
     size_t idx = 0;
@@ -430,6 +440,21 @@ fail_expected(struct context *ctx, char *str) {
     fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
     eprint_token_line(ctx, tok);
     fprintf(stderr, "Expected %s.\n", str);
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_reserved_ident(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: reserved identifier\n");
+    eprint_token_line(ctx, tok);
+    fprintf(stderr, "Identifiers starting with '__builtin' are reserved.\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_unknown_builtin(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: unknown builtin function\n");
+    eprint_token_line(ctx, tok);
     exit(EXIT_FAILURE);
 }
 
@@ -552,9 +577,9 @@ emit_drop_type(struct context *ctx, enum TYPE ty) {
 }
 
 static void
-emit_fn_call(struct context *ctx, char *name, size_t name_len, bool has_return_value) {
+emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TYPE return_type) {
     fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
-    if (has_return_value) { emit_push(ctx, "w0"); }
+    if (return_type != TYPE_UNIT) { emit_push(ctx, "w0"); }
 }
 
 static void
@@ -624,6 +649,11 @@ emit_int_literal(struct context *ctx, char *lit, size_t lit_len) {
     emit_push(ctx, "w0");
 }
 
+static void
+emit_builtin_trap(struct context *ctx) {
+    fprintf(ctx->output_file, "\tbrk\t#0\n");
+}
+
 static void compile_program(struct context *ctx);
 static void compile_static_stmnt(struct context *ctx);
 static void compile_static_let_stmnt(struct context *ctx);
@@ -660,6 +690,9 @@ compile_static_let_stmnt(struct context *ctx) {
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
+    if (token_starts_with(ctx, name_tok, "__builtin")) {
+        fail_reserved_ident(ctx, name_tok);
+    }
     take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
     compile_fn_def(ctx, &name_tok);
 }
@@ -677,10 +710,10 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     if (peek_token_kind(ctx) == TOKEN_RIGHT_ARROW) {
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_ARROW);
         take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
-        if (type_tok.len == (sizeof "i32" - 1)
-            && strncmp(ctx->src + type_tok.loc.idx, "i32", (sizeof "i32" - 1)) == 0) {
+        if (token_equals(ctx, type_tok, "i32")) {
             expected_type = TYPE_I32;
         } else {
+            // TODO: support unit return type
             fail_expected(ctx, "i32");
         }
     }
@@ -887,17 +920,16 @@ compile_fn_call(struct context *ctx) {
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
-    char *name = ctx->src + name_tok.loc.idx;
-    size_t name_len = name_tok.len;
-    if (name_len == (sizeof "__builtin_trap" - 1)
-        && strncmp(name, "__builtin_trap", (sizeof "__builtin_trap" - 1)) == 0) {
-        fprintf(ctx->output_file, "\tbrk\t#0\n");
-        return TYPE_UNIT; // TODO: never type
+    if (token_starts_with(ctx, name_tok, "__builtin")) {
+        if (token_equals(ctx, name_tok, "__builtin_trap")) {
+            emit_builtin_trap(ctx);
+            return TYPE_UNIT; // TODO: never type
+        }
+        fail_unknown_builtin(ctx, name_tok);
     }
-    // TODO: support optional return value
-    bool has_return_value = true;
-    emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, has_return_value);
-    return TYPE_I32; // TODO: lookup return type
+    enum TYPE return_type = TYPE_I32; // TODO: lookup return type in symbol table
+    emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, return_type);
+    return return_type;
 }
 
 static enum TYPE
