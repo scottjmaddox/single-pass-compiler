@@ -25,7 +25,6 @@ enum TOKEN {
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_SLASH,
-    TOKEN_SEMICOLON,
     TOKEN_LESS_THAN,
     TOKEN_LESS_EQUAL,
     TOKEN_EQUAL,
@@ -57,7 +56,6 @@ static char *TOKEN_NAMES[] = {
     "PLUS",
     "MINUS",
     "SLASH",
-    "SEMICOLON",
     "LESS_THAN",
     "LESS_EQUAL",
     "EQUAL",
@@ -83,7 +81,6 @@ enum UNARY_OP {
 };
 
 enum BINARY_OP {
-    BINARY_OP_SEQUENCE,
     BINARY_OP_LOGICAL_OR,
     BINARY_OP_LOGICAL_AND,
     BINARY_OP_EQ,
@@ -105,7 +102,6 @@ static int UNARY_OP_RIGHT_BINDING_POWERS[] = {
 };
 
 static int BINARY_OP_LEFT_BINDING_POWERS[] = {
-    [BINARY_OP_SEQUENCE]    = 0,
     [BINARY_OP_LOGICAL_OR]  = 10,
     [BINARY_OP_LOGICAL_AND] = 20,
     [BINARY_OP_EQ]          = 30,
@@ -123,7 +119,6 @@ static int BINARY_OP_LEFT_BINDING_POWERS[] = {
 
 static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
     // +1 for left-to-right associativity, -1 for right-to-left associativity
-    [BINARY_OP_SEQUENCE]    = 0 + 1,
     [BINARY_OP_LOGICAL_OR]  = 10 + 1,
     [BINARY_OP_LOGICAL_AND] = 20 + 1,
     [BINARY_OP_EQ]          = 30 + 1,
@@ -243,7 +238,6 @@ lex(char *src, size_t src_len, struct location from_loc) {
             }
             tok.kind = TOKEN_SLASH;
             return tok;
-        case ';': tok.kind = TOKEN_SEMICOLON; return tok;
         case '<':
             if (tok.loc.idx + 1 < src_len) {
                 switch (src[tok.loc.idx + 1]) {
@@ -655,13 +649,12 @@ compile_static_stmnt(struct context *ctx) {
 
 static void
 compile_static_let_stmnt(struct context *ctx) {
-    // EBNF: static_let_stmnt = "let" ident "=" fn_def ";" ;
+    // EBNF: static_let_stmnt = "let" ident "=" fn_def ;
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
     compile_fn_def(ctx, &name_tok);
-    take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON);
 }
 
 static void
@@ -694,10 +687,10 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
 
 static enum TYPE
 compile_block(struct context *ctx) {
-    // EBNF: block = "{" [ expr ] "}" ;
+    // EBNF: block = "{" { expr } "}" ;
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
     enum TYPE return_type = TYPE_UNIT;
-    if (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
+    while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
         return_type = compile_expr(ctx, 0);
     }
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
@@ -706,10 +699,9 @@ compile_block(struct context *ctx) {
 
 static enum TYPE
 compile_expr(struct context *ctx, int min_binding_power) {
-    // EBNF: expr = ";" | block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
+    // EBNF: expr = block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
     enum TYPE left_type, right_type;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_SEMICOLON: take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON); left_type = TYPE_UNIT; break;
     case TOKEN_RIGHT_BRACE: return TYPE_UNIT;
     case TOKEN_LEFT_BRACE: left_type = compile_block(ctx); break;
     case TOKEN_KEYWORD_IF: left_type = compile_if_expr(ctx); break;
@@ -724,11 +716,10 @@ compile_expr(struct context *ctx, int min_binding_power) {
     case TOKEN_MINUS: left_type = compile_prefix_op_expr(ctx); break;
     default: fail_expected(ctx, "an expression");
     }
-    // EBNF: infix_op = ";" | "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+    // EBNF: infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
     for (;;) {
         enum BINARY_OP op;
         switch (peek_token_kind(ctx)) {
-        case TOKEN_SEMICOLON:           op = BINARY_OP_SEQUENCE; break;
         case TOKEN_BAR_BAR:             op = BINARY_OP_LOGICAL_OR; break;
         case TOKEN_AMPERSAND_AMPERSAND: op = BINARY_OP_LOGICAL_AND; break;
         case TOKEN_EQUAL_EQUAL:         op = BINARY_OP_EQ; break;
@@ -751,11 +742,6 @@ compile_expr(struct context *ctx, int min_binding_power) {
         take_token(ctx, &op_tok);
         enum TYPE result_type;
         switch (op) {
-        case BINARY_OP_SEQUENCE: {
-            right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-            result_type = right_type;
-            break;
-        }
         case BINARY_OP_LOGICAL_OR: {
             if (left_type != TYPE_I32) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, left_type);
@@ -840,6 +826,11 @@ compile_if_expr(struct context *ctx) {
         if (then_type != else_type) {
             fail_type_mismatch(ctx, else_tok, then_type, else_type);
         }
+    } else {
+        if (then_type != TYPE_UNIT) {
+            // TODO: show the then block span, not the if_tok
+            fail_type_mismatch(ctx, if_tok, TYPE_UNIT, then_type);
+        }
     }
     emit_label(ctx, done_label);
     return then_type;
@@ -853,14 +844,23 @@ compile_prefix_op_expr(struct context *ctx) {
     case TOKEN_EXCLAMATION:
         take_token_expect_kind(ctx, NULL, TOKEN_EXCLAMATION);
         return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
+        if (return_type != TYPE_I32) {
+            fail_type_mismatch(ctx, ctx->tokens[ctx->token_offset], TYPE_I32, return_type);
+        }
         emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
         break;
     case TOKEN_MINUS:
         take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
         if (peek_token_kind(ctx) == TOKEN_INT_LITERAL) {
             return_type = compile_int_literal(ctx, true);
+            if (return_type != TYPE_I32) {
+                fail_type_mismatch(ctx, ctx->tokens[ctx->token_offset], TYPE_I32, return_type);
+            }
         } else {
             return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
+            if (return_type != TYPE_I32) {
+                fail_type_mismatch(ctx, ctx->tokens[ctx->token_offset], TYPE_I32, return_type);
+            }
             emit_unary_op(ctx, UNARY_OP_NEG);
         }
         break;

@@ -23,11 +23,11 @@ The currently supported grammar, in extended Backus–Naur form (EBNF):
 ```ebnf
 program = { static_stmnt } ;
 static_stmnt = static_let_stmnt ;
-static_let_stmnt = "let" ident "=" fn_def ";" ;
+static_let_stmnt = "let" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = ident ;
-block = "{" [ expr ] "}" ;
-expr = ";" | block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
+block = "{" { expr } "}" ;
+expr = block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
 if_expr = "if" expr block_expr { "else" "if" expr block_expr } [ "else" block_expr ] ;
 fn_call = ident "(" ")" ;
 op_expr = prefix_op expr | expr infix_op expr ;
@@ -40,7 +40,7 @@ alpha = "_" | "A" .. "Z" | "a" .. "z" ;
 digit = "0" .. "9" ;
 
 prefix_op = "!" | "-" ;
-infix_op = ";" | "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
 
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
@@ -64,9 +64,8 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] logical operators: `&&`, `||`, `!`
 - [x] statements in functions; `__builtin_trap` intrinsic
 - [x] if/else expessions and basic type checking
+- [x] remove semicolons; they're not needed
 - [ ] self-correcting tests
-- [ ] improve error message when semicolon OR right brace is expected
-  - or can we completely eliminate the need for semicolons?
 - [ ] use spans to improve error messages
 - [ ] write to tmp file then move into place on success
 - [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`

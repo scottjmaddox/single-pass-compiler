@@ -1,1 +1,1 @@
-let main = fn() -> i32 {}
+let main = fn() {}
