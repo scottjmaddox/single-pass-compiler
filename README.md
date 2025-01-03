@@ -24,21 +24,23 @@ The currently supported grammar, in extended Backus–Naur form (EBNF):
 program = { static_stmnt } ;
 static_stmnt = static_let_stmnt ;
 static_let_stmnt = "let" ident "=" fn_def ";" ;
-fn_def = "fn" "(" ")" "->" type_expr "{" { stmnt } expr "}" ;
-stmnt = expr ";" ;
-expr = "(" expr ")" | prefix_op expr | int_literal | fn_call | expr infix_op expr ;
-fn_call = ident "(" ")" ;
+fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = ident ;
+block = "{" [ expr ] "}" ;
+expr = ";" | block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
+if_expr = "if" expr block_expr { "else" "if" expr block_expr } [ "else" block_expr ] ;
+fn_call = ident "(" ")" ;
+op_expr = prefix_op expr | expr infix_op expr ;
 
 ident = alpha { alphanumeric } ;
-int_literal = [ "-" ] digit { "_" | digit } ;
+int_literal = digit { "_" | digit } ;
 
 alphanumeric = alpha | digit ;
 alpha = "_" | "A" .. "Z" | "a" .. "z" ;
 digit = "0" .. "9" ;
 
 prefix_op = "!" | "-" ;
-infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+infix_op = ";" | "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
 
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
@@ -61,7 +63,12 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`
 - [x] logical operators: `&&`, `||`, `!`
 - [x] statements in functions; `__builtin_trap` intrinsic
-- [ ] automated tests
+- [x] if/else expessions and basic type checking
+- [ ] self-correcting tests
+- [ ] improve error message when semicolon OR right brace is expected
+  - or can we completely eliminate the need for semicolons?
+- [ ] use spans to improve error messages
+- [ ] write to tmp file then move into place on success
 - [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
 - [ ] push-pop annihilation
 - [ ] reference types
@@ -77,4 +84,3 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [ ] unconditional loops, continue, and break
 - [ ] output to stdout on `-o -`
 - [ ] `-g` / `--debug` option
-- [ ] write to tmp file then move into place on success?

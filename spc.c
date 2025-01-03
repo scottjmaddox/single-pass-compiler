@@ -36,8 +36,10 @@ enum TOKEN {
     TOKEN_BAR_BAR,
     TOKEN_RIGHT_BRACE,
     TOKEN_RIGHT_ARROW,
+    TOKEN_KEYWORD_IF,
     TOKEN_KEYWORD_FN,
     TOKEN_KEYWORD_LET,
+    TOKEN_KEYWORD_ELSE,
     TOKEN_IDENT,
     TOKEN_INT_LITERAL,
     TOKEN_UNKNOWN,
@@ -66,8 +68,10 @@ static char *TOKEN_NAMES[] = {
     "BAR_BAR",
     "RIGHT_BRACE",
     "RIGHT_ARROW",
+    "KEYWORD_IF",
     "KEYWORD_FN",
     "KEYWORD_LET",
+    "KEYWORD_ELSE",
     "IDENT",
     "INT_LITERAL",
     "UNKNOWN",
@@ -79,6 +83,7 @@ enum UNARY_OP {
 };
 
 enum BINARY_OP {
+    BINARY_OP_SEQUENCE,
     BINARY_OP_LOGICAL_OR,
     BINARY_OP_LOGICAL_AND,
     BINARY_OP_EQ,
@@ -100,6 +105,7 @@ static int UNARY_OP_RIGHT_BINDING_POWERS[] = {
 };
 
 static int BINARY_OP_LEFT_BINDING_POWERS[] = {
+    [BINARY_OP_SEQUENCE]    = 0,
     [BINARY_OP_LOGICAL_OR]  = 10,
     [BINARY_OP_LOGICAL_AND] = 20,
     [BINARY_OP_EQ]          = 30,
@@ -117,6 +123,7 @@ static int BINARY_OP_LEFT_BINDING_POWERS[] = {
 
 static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
     // +1 for left-to-right associativity, -1 for right-to-left associativity
+    [BINARY_OP_SEQUENCE]    = 0 + 1,
     [BINARY_OP_LOGICAL_OR]  = 10 + 1,
     [BINARY_OP_LOGICAL_AND] = 20 + 1,
     [BINARY_OP_EQ]          = 30 + 1,
@@ -132,6 +139,15 @@ static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
     [BINARY_OP_REM]         = 60 + 1,
 };
 
+enum TYPE {
+    TYPE_UNIT,
+    TYPE_I32,
+};
+
+static char *TYPE_NAMES[] = {
+    "unit",
+    "i32",
+};
 
 struct str {
     size_t len;
@@ -280,16 +296,14 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.len = i - tok.loc.idx;
             switch (tok.len) {
             case 2:
-                if (strncmp(src + tok.loc.idx, "fn", 2) == 0) {
-                    tok.kind = TOKEN_KEYWORD_FN;
-                    return tok;
-                }
+                if (strncmp(src + tok.loc.idx, "if", 2) == 0) { tok.kind = TOKEN_KEYWORD_IF; return tok; }
+                if (strncmp(src + tok.loc.idx, "fn", 2) == 0) { tok.kind = TOKEN_KEYWORD_FN; return tok; }
                 break;
             case 3:
-                if (strncmp(src + tok.loc.idx, "let", 3) == 0) {
-                    tok.kind = TOKEN_KEYWORD_LET;
-                    return tok;
-                }
+                if (strncmp(src + tok.loc.idx, "let", 3) == 0) { tok.kind = TOKEN_KEYWORD_LET; return tok; }
+                break;
+            case 4:
+                if (strncmp(src + tok.loc.idx, "else", 4) == 0) { tok.kind = TOKEN_KEYWORD_ELSE; return tok; }
                 break;
             }
             tok.kind = TOKEN_IDENT;
@@ -408,24 +422,15 @@ eprint_token_line(struct context *ctx, struct token tok) {
 }
 
 static void
-eprint_expected_token_kinds(struct context *ctx, enum TOKEN *token_kinds, size_t token_kinds_len) {
-    struct token tok;
-    take_token(ctx, &tok);
+fail_expected_token_kind(struct context *ctx, enum TOKEN expected_token_kind, struct token tok) {
     fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
     eprint_token_line(ctx, tok);
-    fprintf(stderr, "Expected one of: ");
-    for (size_t i = 0; i < token_kinds_len; i++) {
-        fprintf(stderr, "%s", TOKEN_NAMES[token_kinds[i]]);
-        if (i < token_kinds_len - 1) {
-            fprintf(stderr, ", ");
-        }
-    }
-    fprintf(stderr, "\n");
+    fprintf(stderr, "Expected: %s\n", TOKEN_NAMES[expected_token_kind]);
     exit(EXIT_FAILURE);
 }
 
 static void
-eprint_expected(struct context *ctx, char *str) {
+fail_expected(struct context *ctx, char *str) {
     struct token tok;
     take_token(ctx, &tok);
     fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
@@ -435,7 +440,16 @@ eprint_expected(struct context *ctx, char *str) {
 }
 
 static void
-eprint_int_literal_too_long(struct context *ctx, struct token tok) {
+fail_type_mismatch(struct context *ctx, struct token tok, enum TYPE expected_type, enum TYPE actual_type) {
+    fprintf(stderr, "error: type mismatch:\n");
+    eprint_token_line(ctx, tok);
+    fprintf(stderr, "Expected type: %s\n", TYPE_NAMES[expected_type]);
+    fprintf(stderr, "Actual type: %s\n", TYPE_NAMES[actual_type]);
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_int_literal_too_long(struct context *ctx, struct token tok) {
     fprintf(stderr, "error: integer literal too long\n");
     eprint_token_line(ctx, tok);
     fprintf(stderr, "Maximum allowed length (excluding underscores): %d\n", MAX_INT_LITERAL_LEN);
@@ -447,7 +461,7 @@ take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN to
     struct token tok;
     take_token(ctx, &tok);
     if (tok.kind != token_kind) {
-        eprint_expected_token_kinds(ctx, &token_kind, 1);
+        fail_expected_token_kind(ctx, token_kind, tok);
     }
     if (tok_out != NULL) {
         *tok_out = tok;
@@ -499,6 +513,11 @@ emit_pop(struct context *ctx, char *reg) {
 }
 
 static void
+emit_clear_reg(struct context *ctx, char *reg) {
+    fprintf(ctx->output_file, "\tmov\t%s, #0\n", reg);
+}
+
+static void
 emit_fn_prologue(struct context *ctx, char *name, size_t name_len) {
     fprintf(ctx->output_file,
         "\n"
@@ -514,8 +533,15 @@ emit_fn_prologue(struct context *ctx, char *name, size_t name_len) {
 }
 
 static void
-emit_fn_epilogue(struct context *ctx, bool has_return_value) {
-    if (has_return_value) { emit_pop(ctx, "w0"); }
+emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
+    switch (return_type) {
+    case TYPE_UNIT:
+        emit_clear_reg(ctx, "w0");
+        break;
+    case TYPE_I32:
+        emit_pop(ctx, "w0");
+        break;
+    }
     fprintf(ctx->output_file,
         "\n"
         "\tldp\tx29, x30, [sp], #16\n"
@@ -601,10 +627,12 @@ static void compile_program(struct context *ctx);
 static void compile_static_stmnt(struct context *ctx);
 static void compile_static_let_stmnt(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
-static void compile_expr(struct context *ctx, int min_binding_power);
-static void compile_prefix_op_expr(struct context *ctx);
-static void compile_fn_call(struct context *ctx);
-static void compile_int_literal(struct context *ctx, bool negate);
+static enum TYPE compile_block(struct context *ctx);
+static enum TYPE compile_expr(struct context *ctx, int min_binding_power);
+static enum TYPE compile_if_expr(struct context *ctx);
+static enum TYPE compile_prefix_op_expr(struct context *ctx);
+static enum TYPE compile_fn_call(struct context *ctx);
+static enum TYPE compile_int_literal(struct context *ctx, bool negate);
 
 static void
 compile_program(struct context *ctx) {
@@ -621,7 +649,7 @@ compile_static_stmnt(struct context *ctx) {
     // EBNF: static_stmnt = static_let_stmnt ;
     switch (peek_token_kind(ctx)) {
     case TOKEN_KEYWORD_LET: compile_static_let_stmnt(ctx); break;
-    default: eprint_expected(ctx, "a let statement");
+    default: fail_expected(ctx, "a let statement");
     }
 }
 
@@ -638,55 +666,69 @@ compile_static_let_stmnt(struct context *ctx) {
 
 static void
 compile_fn_def(struct context *ctx, struct token *name_tok) {
-    // EBNF: fn_def = "fn" "(" ")" "->" type_expr "{" { stmnt } expr "}" ;
+    // EBNF:
+    // fn_def = "fn" "(" ")" "->" type_expr block ;
+    // type_expr = ident ;
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_FN);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
-    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_ARROW);
-    // TODO: support arbitrary type expressions
+    enum TYPE expected_type = TYPE_UNIT;
     struct token type_tok;
-    take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
-    // TODO: intern the type, and type check
-    take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
-    emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
-    for (;;) {
-        compile_expr(ctx, 0);
-        if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
-            take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON);
-            emit_pop(ctx, "w0");
+    if (peek_token_kind(ctx) == TOKEN_RIGHT_ARROW) {
+        take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_ARROW);
+        take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
+        if (type_tok.len == (sizeof "i32" - 1)
+            && strncmp(ctx->src + type_tok.loc.idx, "i32", (sizeof "i32" - 1)) == 0) {
+            expected_type = TYPE_I32;
         } else {
-            break;
+            fail_expected(ctx, "i32");
         }
     }
-    // TODO: support optional return value
-    bool has_return_value = true;
-    emit_fn_epilogue(ctx, has_return_value);
-    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
+    emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
+    enum TYPE return_type = compile_block(ctx);
+    if (return_type != expected_type) {
+        fail_type_mismatch(ctx, type_tok, expected_type, return_type);
+    }
+    emit_fn_epilogue(ctx, return_type);
 }
 
-static void
+static enum TYPE
+compile_block(struct context *ctx) {
+    // EBNF: block = "{" [ expr ] "}" ;
+    take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
+    enum TYPE return_type = TYPE_UNIT;
+    if (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
+        return_type = compile_expr(ctx, 0);
+    }
+    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
+    return return_type;
+}
+
+static enum TYPE
 compile_expr(struct context *ctx, int min_binding_power) {
-    // EBNF:
-    // expr = "(" expr ")" | prefix_op expr | int_literal | fn_call | expr infix_op expr ;
-    // prefix_op = "!" | "-" ;
-    // infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+    // EBNF: expr = ";" | block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
+    enum TYPE left_type, right_type;
     switch (peek_token_kind(ctx)) {
+    case TOKEN_SEMICOLON: take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON); left_type = TYPE_UNIT; break;
+    case TOKEN_RIGHT_BRACE: return TYPE_UNIT;
+    case TOKEN_LEFT_BRACE: left_type = compile_block(ctx); break;
+    case TOKEN_KEYWORD_IF: left_type = compile_if_expr(ctx); break;
     case TOKEN_LEFT_PAREN:
         take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
-        compile_expr(ctx, 0);
+        left_type = compile_expr(ctx, 0);
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
         break;
+    case TOKEN_INT_LITERAL: left_type = compile_int_literal(ctx, false); break;
+    case TOKEN_IDENT: left_type = compile_fn_call(ctx); break;
     case TOKEN_EXCLAMATION:
-    case TOKEN_MINUS:
-        compile_prefix_op_expr(ctx);
-        break;
-    case TOKEN_INT_LITERAL: compile_int_literal(ctx, false); break;
-    case TOKEN_IDENT: compile_fn_call(ctx); break;
-    default: eprint_expected(ctx, "an expression");
+    case TOKEN_MINUS: left_type = compile_prefix_op_expr(ctx); break;
+    default: fail_expected(ctx, "an expression");
     }
+    // EBNF: infix_op = ";" | "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
     for (;;) {
         enum BINARY_OP op;
         switch (peek_token_kind(ctx)) {
+        case TOKEN_SEMICOLON:           op = BINARY_OP_SEQUENCE; break;
         case TOKEN_BAR_BAR:             op = BINARY_OP_LOGICAL_OR; break;
         case TOKEN_AMPERSAND_AMPERSAND: op = BINARY_OP_LOGICAL_AND; break;
         case TOKEN_EQUAL_EQUAL:         op = BINARY_OP_EQ; break;
@@ -700,70 +742,134 @@ compile_expr(struct context *ctx, int min_binding_power) {
         case TOKEN_ASTERISK:            op = BINARY_OP_MUL; break;
         case TOKEN_SLASH:               op = BINARY_OP_DIV; break;
         case TOKEN_PERCENT:             op = BINARY_OP_REM; break;
-        default: return;
+        default: return left_type;
         }
         if (BINARY_OP_LEFT_BINDING_POWERS[op] < min_binding_power) {
             break;
         }
-        struct token tok;
-        take_token(ctx, &tok);
+        struct token op_tok;
+        take_token(ctx, &op_tok);
+        enum TYPE result_type;
         switch (op) {
+        case BINARY_OP_SEQUENCE: {
+            right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            result_type = right_type;
+            break;
+        }
         case BINARY_OP_LOGICAL_OR: {
+            if (left_type != TYPE_I32) {
+                fail_type_mismatch(ctx, op_tok, TYPE_I32, left_type);
+            }
             size_t true_label = ctx->label_count++;
             size_t done_label = ctx->label_count++;
             emit_branch_if_nonzero(ctx, true_label);
-            compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            if (right_type != TYPE_I32) {
+                fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
+            }
             emit_branch_if_nonzero(ctx, true_label);
             emit_int_literal(ctx, "0", 1);
             emit_branch(ctx, done_label);
             emit_label(ctx, true_label);
             emit_int_literal(ctx, "1", 1);
             emit_label(ctx, done_label);
-            continue;
+            result_type = TYPE_I32; // TODO: return TYPE_BOOL
+            break;
         }
         case BINARY_OP_LOGICAL_AND: {
+            if (left_type != TYPE_I32) {
+                fail_type_mismatch(ctx, op_tok, TYPE_I32, left_type);
+            }
             size_t false_label = ctx->label_count++;
             size_t done_label = ctx->label_count++;
             emit_branch_if_zero(ctx, false_label);
-            compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            if (right_type != TYPE_I32) {
+                fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
+            }
             emit_branch_if_zero(ctx, false_label);
             emit_int_literal(ctx, "1", 1);
             emit_branch(ctx, done_label);
             emit_label(ctx, false_label);
             emit_int_literal(ctx, "0", 1);
             emit_label(ctx, done_label);
-            continue;
+            result_type = TYPE_I32; // TODO: return TYPE_BOOL
+            break;
         }
         default:
-            compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            if (left_type != TYPE_I32) {
+                fail_type_mismatch(ctx, op_tok, TYPE_I32, left_type);
+            }
+            right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            if (right_type != TYPE_I32) {
+                fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
+            }
             emit_binary_op(ctx, op);
-            continue;
+            result_type = TYPE_I32; // TODO: infer type
+            break;
         }
+        left_type = result_type;
     }
+    return left_type;
 }
 
-static void
+static enum TYPE
+compile_if_expr(struct context *ctx) {
+    // EBNF: if_expr = "if" expr block_expr { "else" "if" expr block_expr } [ "else" block_expr ] ;
+    struct token if_tok;
+    take_token_expect_kind(ctx, &if_tok, TOKEN_KEYWORD_IF);
+    enum TYPE condition_type = compile_expr(ctx, 0);
+    if (condition_type == TYPE_UNIT) {
+        fail_type_mismatch(ctx, if_tok, TYPE_I32, condition_type);
+    }
+    size_t false_label = ctx->label_count++;
+    size_t done_label = ctx->label_count++;
+    emit_branch_if_zero(ctx, false_label);
+    enum TYPE then_type = compile_block(ctx);
+    emit_branch(ctx, done_label);
+    emit_label(ctx, false_label);
+    if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
+        struct token else_tok;
+        take_token_expect_kind(ctx, &else_tok, TOKEN_KEYWORD_ELSE);
+        enum TYPE else_type;
+        if (peek_token_kind(ctx) == TOKEN_KEYWORD_IF) {
+            else_type = compile_if_expr(ctx);
+        } else {
+            else_type = compile_block(ctx);
+        }
+        if (then_type != else_type) {
+            fail_type_mismatch(ctx, else_tok, then_type, else_type);
+        }
+    }
+    emit_label(ctx, done_label);
+    return then_type;
+}
+
+static enum TYPE
 compile_prefix_op_expr(struct context *ctx) {
+    // EBNF: prefix_op = "!" | "-" ;
+    enum TYPE return_type;
     switch (peek_token_kind(ctx)) {
     case TOKEN_EXCLAMATION:
         take_token_expect_kind(ctx, NULL, TOKEN_EXCLAMATION);
-        compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
+        return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
         emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
         break;
     case TOKEN_MINUS:
         take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
         if (peek_token_kind(ctx) == TOKEN_INT_LITERAL) {
-            compile_int_literal(ctx, true);
+            return_type = compile_int_literal(ctx, true);
         } else {
-            compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
+            return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
             emit_unary_op(ctx, UNARY_OP_NEG);
         }
         break;
     default: assert(!"unreachable");
     }
+    return return_type;
 }
 
-static void
+static enum TYPE
 compile_fn_call(struct context *ctx) {
     // EBNF: fn_call = ident "(" ")" ;
     struct token name_tok;
@@ -775,14 +881,15 @@ compile_fn_call(struct context *ctx) {
     if (name_len == (sizeof "__builtin_trap" - 1)
         && strncmp(name, "__builtin_trap", (sizeof "__builtin_trap" - 1)) == 0) {
         fprintf(ctx->output_file, "\tbrk\t#0\n");
-        return;
+        return TYPE_UNIT; // TODO: never type
     }
     // TODO: support optional return value
     bool has_return_value = true;
     emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, has_return_value);
+    return TYPE_I32; // TODO: lookup return type
 }
 
-static void
+static enum TYPE
 compile_int_literal(struct context *ctx, bool negate) {
     struct token tok;
     take_token_expect_kind(ctx, &tok, TOKEN_INT_LITERAL);
@@ -796,10 +903,11 @@ compile_int_literal(struct context *ctx, bool negate) {
         out_cap -= 1;
     }
     if (remove_underscores(ctx->src + tok.loc.idx, tok.len, out, out_cap, &lit_len) == -1) {
-        eprint_int_literal_too_long(ctx, tok);
+        fail_int_literal_too_long(ctx, tok);
     }
     if (negate) { lit_len += 1; }
     emit_int_literal(ctx, lit, lit_len);
+    return TYPE_I32;
 }
 
 /////////////////
