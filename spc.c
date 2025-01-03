@@ -15,8 +15,10 @@
 
 enum TOKEN {
     TOKEN_EOF = 0,
+    TOKEN_EXCLAMATION,
     TOKEN_EXCLAMATION_EQUAL,
     TOKEN_PERCENT,
+    TOKEN_AMPERSAND_AMPERSAND,
     TOKEN_LEFT_PAREN,
     TOKEN_RIGHT_PAREN,
     TOKEN_ASTERISK,
@@ -31,6 +33,7 @@ enum TOKEN {
     TOKEN_GREATER_THAN,
     TOKEN_GREATER_EQUAL,
     TOKEN_LEFT_BRACE,
+    TOKEN_BAR_BAR,
     TOKEN_RIGHT_BRACE,
     TOKEN_RIGHT_ARROW,
     TOKEN_KEYWORD_FN,
@@ -42,8 +45,10 @@ enum TOKEN {
 
 static char *TOKEN_NAMES[] = {
     "EOF",
+    "EXCLAMATION",
     "EXCLAMATION_EQUAL",
     "PERCENT",
+    "AMPERSAND_AMPERSAND",
     "LEFT_PAREN",
     "RIGHT_PAREN",
     "ASTERISK",
@@ -58,6 +63,7 @@ static char *TOKEN_NAMES[] = {
     "GREATER_THAN",
     "GREATER_EQUAL",
     "LEFT_BRACE",
+    "BAR_BAR",
     "RIGHT_BRACE",
     "RIGHT_ARROW",
     "KEYWORD_FN",
@@ -68,10 +74,13 @@ static char *TOKEN_NAMES[] = {
 };
 
 enum UNARY_OP {
+    UNARY_OP_LOGICAL_NOT,
     UNARY_OP_NEG,
 };
 
 enum BINARY_OP {
+    BINARY_OP_LOGICAL_OR,
+    BINARY_OP_LOGICAL_AND,
     BINARY_OP_EQ,
     BINARY_OP_NE,
     BINARY_OP_LT,
@@ -86,36 +95,41 @@ enum BINARY_OP {
 };
 
 static int UNARY_OP_RIGHT_BINDING_POWERS[] = {
-    [UNARY_OP_NEG] = 50,
+    [UNARY_OP_LOGICAL_NOT] = 70,
+    [UNARY_OP_NEG]         = 70,
 };
 
 static int BINARY_OP_LEFT_BINDING_POWERS[] = {
-    [BINARY_OP_EQ]  = 10,
-    [BINARY_OP_NE]  = 10,
-    [BINARY_OP_LT]  = 20,
-    [BINARY_OP_LE]  = 20,
-    [BINARY_OP_GT]  = 20,
-    [BINARY_OP_GE]  = 20,
-    [BINARY_OP_ADD] = 30,
-    [BINARY_OP_SUB] = 30,
-    [BINARY_OP_MUL] = 40,
-    [BINARY_OP_DIV] = 40,
-    [BINARY_OP_REM] = 40,
+    [BINARY_OP_LOGICAL_OR]  = 10,
+    [BINARY_OP_LOGICAL_AND] = 20,
+    [BINARY_OP_EQ]          = 30,
+    [BINARY_OP_NE]          = 30,
+    [BINARY_OP_LT]          = 30,
+    [BINARY_OP_LE]          = 40,
+    [BINARY_OP_GT]          = 40,
+    [BINARY_OP_GE]          = 40,
+    [BINARY_OP_ADD]         = 50,
+    [BINARY_OP_SUB]         = 50,
+    [BINARY_OP_MUL]         = 60,
+    [BINARY_OP_DIV]         = 60,
+    [BINARY_OP_REM]         = 60,
 };
 
 static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
     // +1 for left-to-right associativity, -1 for right-to-left associativity
-    [BINARY_OP_EQ]  = 10 + 1,
-    [BINARY_OP_NE]  = 10 + 1,
-    [BINARY_OP_LT]  = 20 + 1,
-    [BINARY_OP_LE]  = 20 + 1,
-    [BINARY_OP_GT]  = 20 + 1,
-    [BINARY_OP_GE]  = 20 + 1,
-    [BINARY_OP_ADD] = 30 + 1,
-    [BINARY_OP_SUB] = 30 + 1,
-    [BINARY_OP_MUL] = 40 + 1,
-    [BINARY_OP_DIV] = 40 + 1,
-    [BINARY_OP_REM] = 40 + 1,
+    [BINARY_OP_LOGICAL_OR]  = 10 + 1,
+    [BINARY_OP_LOGICAL_AND] = 20 + 1,
+    [BINARY_OP_EQ]          = 30 + 1,
+    [BINARY_OP_NE]          = 30 + 1,
+    [BINARY_OP_LT]          = 40 + 1,
+    [BINARY_OP_LE]          = 40 + 1,
+    [BINARY_OP_GT]          = 40 + 1,
+    [BINARY_OP_GE]          = 40 + 1,
+    [BINARY_OP_ADD]         = 50 + 1,
+    [BINARY_OP_SUB]         = 50 + 1,
+    [BINARY_OP_MUL]         = 60 + 1,
+    [BINARY_OP_DIV]         = 60 + 1,
+    [BINARY_OP_REM]         = 60 + 1,
 };
 
 
@@ -146,25 +160,13 @@ struct context {
     size_t token_offset;
     size_t token_count;
     struct token tokens[MAX_TOKEN_LOOKAHEAD];
+    // Compiler state
+    size_t label_count;
 };
 
 //////////////////////
 // Lexical analysis //
 //////////////////////
-
-static size_t
-scan_int_literal_rest(char *src, size_t src_len, size_t idx) {
-    while (idx < src_len) {
-        switch (src[idx]) {
-        case '_':
-        case '0' ... '9':
-            idx += 1;
-            continue;
-        }
-        break;
-    }
-    return idx;
-}
 
 static struct token
 lex(char *src, size_t src_len, struct location from_loc) {
@@ -188,9 +190,17 @@ lex(char *src, size_t src_len, struct location from_loc) {
                 case '=': tok.kind = TOKEN_EXCLAMATION_EQUAL; tok.len = 2; return tok;
                 }
             }
-            tok.kind = TOKEN_UNKNOWN;
+            tok.kind = TOKEN_EXCLAMATION;
             return tok;
         case '%': tok.kind = TOKEN_PERCENT; return tok;
+        case '&':
+            if (tok.loc.idx + 1 < src_len) {
+                switch (src[tok.loc.idx + 1]) {
+                case '&': tok.kind = TOKEN_AMPERSAND_AMPERSAND; tok.len = 2; return tok;
+                }
+            }
+            tok.kind = TOKEN_UNKNOWN;
+            return tok;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
         case '+': tok.kind = TOKEN_PLUS; return tok;
@@ -199,11 +209,6 @@ lex(char *src, size_t src_len, struct location from_loc) {
             if (tok.loc.idx + 1 < src_len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '>': tok.kind = TOKEN_RIGHT_ARROW; tok.len = 2; return tok;
-                case '0' ... '9':
-                    i = scan_int_literal_rest(src, src_len, tok.loc.idx + 2);
-                    tok.kind = TOKEN_INT_LITERAL;
-                    tok.len = i - tok.loc.idx;
-                    return tok;
                 }
             }
             tok.kind = TOKEN_MINUS;
@@ -248,6 +253,14 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_GREATER_THAN;
             return tok;
         case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
+        case '|':
+            if (tok.loc.idx + 1 < src_len) {
+                switch (src[tok.loc.idx + 1]) {
+                case '|': tok.kind = TOKEN_BAR_BAR; tok.len = 2; return tok;
+                }
+            }
+            tok.kind = TOKEN_UNKNOWN;
+            return tok;
         case '}': tok.kind = TOKEN_RIGHT_BRACE; return tok;
         case '_':
         case 'A' ... 'Z':
@@ -282,7 +295,16 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_IDENT;
             return tok;
         case '0' ... '9':
-            i = scan_int_literal_rest(src, src_len, tok.loc.idx + 1);
+            i = tok.loc.idx + 1;
+            while (i < src_len) {
+                switch (src[i]) {
+                case '_':
+                case '0' ... '9':
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
             tok.kind = TOKEN_INT_LITERAL;
             tok.len = i - tok.loc.idx;
             return tok;
@@ -509,9 +531,32 @@ emit_fn_call(struct context *ctx, char *name, size_t name_len, bool has_return_v
 }
 
 static void
+emit_label(struct context *ctx, size_t label) {
+    fprintf(ctx->output_file, "L%zu:\n", label);
+}
+
+static void
+emit_branch(struct context *ctx, size_t label) {
+    fprintf(ctx->output_file, "\tb\tL%zu\n", label);
+}
+
+static void
+emit_branch_if_zero(struct context *ctx, size_t label) {
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tcbz\tw0, L%zu\n", label);
+}
+
+static void
+emit_branch_if_nonzero(struct context *ctx, size_t label) {
+    emit_pop(ctx, "w0");
+    fprintf(ctx->output_file, "\tcbnz\tw0, L%zu\n", label);
+}
+
+static void
 emit_unary_op(struct context *ctx, enum UNARY_OP op) {
     emit_pop(ctx, "w0");
     switch (op) {
+    case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tw0, #0\n\tcset\tw0, eq\n" ); break;
     case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tw0, w0\n"); break;
     default: assert(!"unreachable");
     }
@@ -557,7 +602,7 @@ static void compile_stmnt(struct context *ctx);
 static void compile_let_stmnt(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static void compile_expr(struct context *ctx, int min_binding_power);
-static void compile_neg_expr(struct context *ctx);
+static void compile_prefix_op_expr(struct context *ctx);
 static void compile_fn_call(struct context *ctx);
 static void compile_int_literal(struct context *ctx, bool negate);
 
@@ -615,16 +660,18 @@ static void
 compile_expr(struct context *ctx, int min_binding_power) {
     // EBNF:
     // expr = "(" expr ")" | prefix_op expr | int_literal | fn_call | expr infix_op expr ;
-    // prefix_op = "-" ;
-    // infix_op = "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+    // prefix_op = "!" | "-" ;
+    // infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_LEFT_PAREN: {
+    case TOKEN_LEFT_PAREN:
         take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
         compile_expr(ctx, 0);
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
         break;
-    }
-    case TOKEN_MINUS: compile_neg_expr(ctx); break;
+    case TOKEN_EXCLAMATION:
+    case TOKEN_MINUS:
+        compile_prefix_op_expr(ctx);
+        break;
     case TOKEN_INT_LITERAL: compile_int_literal(ctx, false); break;
     case TOKEN_IDENT: compile_fn_call(ctx); break;
     default: eprint_expected(ctx, "an expression");
@@ -632,17 +679,19 @@ compile_expr(struct context *ctx, int min_binding_power) {
     for (;;) {
         enum BINARY_OP op;
         switch (peek_token_kind(ctx)) {
-        case TOKEN_EQUAL_EQUAL:        op = BINARY_OP_EQ; break;
-        case TOKEN_EXCLAMATION_EQUAL:  op = BINARY_OP_NE; break;
-        case TOKEN_LESS_THAN:          op = BINARY_OP_LT; break;
-        case TOKEN_LESS_EQUAL:         op = BINARY_OP_LE; break;
-        case TOKEN_GREATER_THAN:       op = BINARY_OP_GT; break;
-        case TOKEN_GREATER_EQUAL:      op = BINARY_OP_GE; break;
-        case TOKEN_PLUS:               op = BINARY_OP_ADD; break;
-        case TOKEN_MINUS:              op = BINARY_OP_SUB; break;
-        case TOKEN_ASTERISK:           op = BINARY_OP_MUL; break;
-        case TOKEN_SLASH:              op = BINARY_OP_DIV; break;
-        case TOKEN_PERCENT:            op = BINARY_OP_REM; break;
+        case TOKEN_BAR_BAR:             op = BINARY_OP_LOGICAL_OR; break;
+        case TOKEN_AMPERSAND_AMPERSAND: op = BINARY_OP_LOGICAL_AND; break;
+        case TOKEN_EQUAL_EQUAL:         op = BINARY_OP_EQ; break;
+        case TOKEN_EXCLAMATION_EQUAL:   op = BINARY_OP_NE; break;
+        case TOKEN_LESS_THAN:           op = BINARY_OP_LT; break;
+        case TOKEN_LESS_EQUAL:          op = BINARY_OP_LE; break;
+        case TOKEN_GREATER_THAN:        op = BINARY_OP_GT; break;
+        case TOKEN_GREATER_EQUAL:       op = BINARY_OP_GE; break;
+        case TOKEN_PLUS:                op = BINARY_OP_ADD; break;
+        case TOKEN_MINUS:               op = BINARY_OP_SUB; break;
+        case TOKEN_ASTERISK:            op = BINARY_OP_MUL; break;
+        case TOKEN_SLASH:               op = BINARY_OP_DIV; break;
+        case TOKEN_PERCENT:             op = BINARY_OP_REM; break;
         default: return;
         }
         if (BINARY_OP_LEFT_BINDING_POWERS[op] < min_binding_power) {
@@ -650,22 +699,59 @@ compile_expr(struct context *ctx, int min_binding_power) {
         }
         struct token tok;
         take_token(ctx, &tok);
-        compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-        emit_binary_op(ctx, op);
+        switch (op) {
+        case BINARY_OP_LOGICAL_OR: {
+            size_t true_label = ctx->label_count++;
+            size_t done_label = ctx->label_count++;
+            emit_branch_if_nonzero(ctx, true_label);
+            compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            emit_branch_if_nonzero(ctx, true_label);
+            emit_int_literal(ctx, "0", 1);
+            emit_branch(ctx, done_label);
+            emit_label(ctx, true_label);
+            emit_int_literal(ctx, "1", 1);
+            emit_label(ctx, done_label);
+            continue;
+        }
+        case BINARY_OP_LOGICAL_AND: {
+            size_t false_label = ctx->label_count++;
+            size_t done_label = ctx->label_count++;
+            emit_branch_if_zero(ctx, false_label);
+            compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            emit_branch_if_zero(ctx, false_label);
+            emit_int_literal(ctx, "1", 1);
+            emit_branch(ctx, done_label);
+            emit_label(ctx, false_label);
+            emit_int_literal(ctx, "0", 1);
+            emit_label(ctx, done_label);
+            continue;
+        }
+        default:
+            compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            emit_binary_op(ctx, op);
+            continue;
+        }
     }
 }
 
 static void
-compile_neg_expr(struct context *ctx) {
-    take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
-    bool negate = true;
-    while (peek_token_kind(ctx) == TOKEN_MINUS) {
+compile_prefix_op_expr(struct context *ctx) {
+    switch (peek_token_kind(ctx)) {
+    case TOKEN_EXCLAMATION:
+        take_token_expect_kind(ctx, NULL, TOKEN_EXCLAMATION);
+        compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
+        emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
+        break;
+    case TOKEN_MINUS:
         take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
-        negate = !negate;
-    }
-    compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
-    if (negate) {
-        emit_unary_op(ctx, UNARY_OP_NEG);
+        if (peek_token_kind(ctx) == TOKEN_INT_LITERAL) {
+            compile_int_literal(ctx, true);
+        } else {
+            compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
+            emit_unary_op(ctx, UNARY_OP_NEG);
+        }
+        break;
+    default: assert(!"unreachable");
     }
 }
 
@@ -697,6 +783,7 @@ compile_int_literal(struct context *ctx, bool negate) {
     if (remove_underscores(ctx->src + tok.loc.idx, tok.len, out, out_cap, &lit_len) == -1) {
         eprint_int_literal_too_long(ctx, tok);
     }
+    if (negate) { lit_len += 1; }
     emit_int_literal(ctx, lit, lit_len);
 }
 

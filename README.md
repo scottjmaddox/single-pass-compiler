@@ -36,8 +36,8 @@ alphanumeric = alpha | digit ;
 alpha = "_" | "A" .. "Z" | "a" .. "z" ;
 digit = "0" .. "9" ;
 
-prefix_op = "-" ;
-infix_op = "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+prefix_op = "!" | "-" ;
+infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
 
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
@@ -58,10 +58,10 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] negative integer literals and negation
 - [x] arithmetic operators: `+`, `-`, `*`, `/`, `%`
 - [x] comparison operators: `==`, `!=`, `>`, `<`, `>=`, `<=`
-- [ ] support one-parameter function calls
-- [ ] assert function
-- [ ] logical operators: `&&`, `||`, `!`
+- [x] logical operators: `&&`, `||`, `!`
+- [ ] `__builtin_trap` intrinsic and automated tests
 - [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
+- [ ] push-pop annihilation
 - [ ] reference types
 - [ ] string literals
 - [ ] printing via printf
