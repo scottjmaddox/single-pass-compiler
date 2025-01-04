@@ -403,8 +403,8 @@ lex(struct context *ctx) {
                     break;
                 }
             }
-            if (i + 1 < len) {
-                switch (src[i + 1]) {
+            if (i < len) {
+                switch (src[i]) {
                 case '.':
                 case 'A' ... 'Z':
                 case 'a' ... 'z': i += 1; is_reserved = true; break;
