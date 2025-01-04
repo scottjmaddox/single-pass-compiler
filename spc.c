@@ -172,7 +172,7 @@ struct context {
     size_t token_count;
     struct token tokens[MAX_TOKEN_LOOKAHEAD];
     // Compiler state
-    size_t label_count;
+    size_t local_label_count;
 };
 
 //////////////////////
@@ -503,9 +503,9 @@ remove_underscores(char *in, size_t in_len, char *out, size_t out_cap, size_t *o
     return 0;
 }
 
-/////////////////////////////
-// Parsing and Compilation //
-/////////////////////////////
+//////////////////////
+// Compiler Backend //
+//////////////////////
 
 static void
 emit_program_prologue(struct context *ctx) {
@@ -583,25 +583,25 @@ emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TYPE return_
 }
 
 static void
-emit_label(struct context *ctx, size_t label) {
-    fprintf(ctx->output_file, "L%zu:\n", label);
+emit_local_label(struct context *ctx, size_t label) {
+    fprintf(ctx->output_file, "%zu:\n", label);
 }
 
 static void
-emit_branch(struct context *ctx, size_t label) {
-    fprintf(ctx->output_file, "\tb\tL%zu\n", label);
+emit_local_forward_branch(struct context *ctx, size_t label) {
+    fprintf(ctx->output_file, "\tb\t%zuf\n", label);
 }
 
 static void
-emit_branch_if_zero(struct context *ctx, size_t label) {
+emit_local_forward_branch_if_zero(struct context *ctx, size_t label) {
     emit_pop(ctx, "w0");
-    fprintf(ctx->output_file, "\tcbz\tw0, L%zu\n", label);
+    fprintf(ctx->output_file, "\tcbz\tw0, %zuf\n", label);
 }
 
 static void
-emit_branch_if_nonzero(struct context *ctx, size_t label) {
+emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label) {
     emit_pop(ctx, "w0");
-    fprintf(ctx->output_file, "\tcbnz\tw0, L%zu\n", label);
+    fprintf(ctx->output_file, "\tcbnz\tw0, %zuf\n", label);
 }
 
 static void
@@ -653,6 +653,10 @@ static void
 emit_builtin_trap(struct context *ctx) {
     fprintf(ctx->output_file, "\tbrk\t#0\n");
 }
+
+///////////////////////
+// Compiler Frontend //
+///////////////////////
 
 static void compile_program(struct context *ctx);
 static void compile_static_stmnt(struct context *ctx);
@@ -717,6 +721,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             fail_expected(ctx, "i32");
         }
     }
+    ctx->local_label_count = 0;
     emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
     enum TYPE return_type = compile_block(ctx);
     if (return_type != expected_type) {
@@ -790,19 +795,19 @@ compile_expr(struct context *ctx, int min_binding_power) {
             if (left_type != TYPE_I32) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, left_type);
             }
-            size_t true_label = ctx->label_count++;
-            size_t done_label = ctx->label_count++;
-            emit_branch_if_nonzero(ctx, true_label);
+            size_t true_label = ctx->local_label_count++;
+            size_t done_label = ctx->local_label_count++;
+            emit_local_forward_branch_if_nonzero(ctx, true_label);
             right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
             if (right_type != TYPE_I32) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
             }
-            emit_branch_if_nonzero(ctx, true_label);
+            emit_local_forward_branch_if_nonzero(ctx, true_label);
             emit_int_literal(ctx, "0", 1);
-            emit_branch(ctx, done_label);
-            emit_label(ctx, true_label);
+            emit_local_forward_branch(ctx, done_label);
+            emit_local_label(ctx, true_label);
             emit_int_literal(ctx, "1", 1);
-            emit_label(ctx, done_label);
+            emit_local_label(ctx, done_label);
             result_type = TYPE_I32; // TODO: return TYPE_BOOL
             break;
         }
@@ -810,19 +815,19 @@ compile_expr(struct context *ctx, int min_binding_power) {
             if (left_type != TYPE_I32) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, left_type);
             }
-            size_t false_label = ctx->label_count++;
-            size_t done_label = ctx->label_count++;
-            emit_branch_if_zero(ctx, false_label);
+            size_t false_label = ctx->local_label_count++;
+            size_t done_label = ctx->local_label_count++;
+            emit_local_forward_branch_if_zero(ctx, false_label);
             right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
             if (right_type != TYPE_I32) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
             }
-            emit_branch_if_zero(ctx, false_label);
+            emit_local_forward_branch_if_zero(ctx, false_label);
             emit_int_literal(ctx, "1", 1);
-            emit_branch(ctx, done_label);
-            emit_label(ctx, false_label);
+            emit_local_forward_branch(ctx, done_label);
+            emit_local_label(ctx, false_label);
             emit_int_literal(ctx, "0", 1);
-            emit_label(ctx, done_label);
+            emit_local_label(ctx, done_label);
             result_type = TYPE_I32; // TODO: return TYPE_BOOL
             break;
         }
@@ -852,12 +857,12 @@ compile_if_expr(struct context *ctx) {
     if (condition_type == TYPE_UNIT) {
         fail_type_mismatch(ctx, if_tok, TYPE_I32, condition_type);
     }
-    size_t false_label = ctx->label_count++;
-    size_t done_label = ctx->label_count++;
-    emit_branch_if_zero(ctx, false_label);
+    size_t false_label = ctx->local_label_count++;
+    size_t done_label = ctx->local_label_count++;
+    emit_local_forward_branch_if_zero(ctx, false_label);
     enum TYPE then_type = compile_block(ctx);
-    emit_branch(ctx, done_label);
-    emit_label(ctx, false_label);
+    emit_local_forward_branch(ctx, done_label);
+    emit_local_label(ctx, false_label);
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
         struct token else_tok;
         take_token_expect_kind(ctx, &else_tok, TOKEN_KEYWORD_ELSE);
@@ -876,7 +881,7 @@ compile_if_expr(struct context *ctx) {
             fail_type_mismatch(ctx, if_tok, TYPE_UNIT, then_type);
         }
     }
-    emit_label(ctx, done_label);
+    emit_local_label(ctx, done_label);
     return then_type;
 }
 
@@ -953,9 +958,9 @@ compile_int_literal(struct context *ctx, bool negate) {
     return TYPE_I32;
 }
 
-/////////////////
-// Entry point //
-/////////////////
+////////////////
+// Entrypoint //
+////////////////
 
 void // output_file_path should have capacity PATH_MAX + 1
 get_default_output_file_path(const char *input_file_path, char *output_file_path) {
