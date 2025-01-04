@@ -39,8 +39,9 @@ alphanumeric = alpha | digit ;
 alpha = "_" | "A" .. "Z" | "a" .. "z" ;
 digit = "0" .. "9" ;
 
-prefix_op = "!" | "-" ;
-infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+prefix_op = "-" | "!" | "~" ;
+infix_op = "*" | "/" | "%" | "+" | "-" | "<<" | ">>"
+         | "<" | "<=" | ">" | ">=" | "==" | "!=" | "&&"  | "||" ;
 
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
@@ -65,8 +66,8 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] statements in functions; `__builtin_trap` intrinsic
 - [x] if/else expessions and basic type checking
 - [x] remove semicolons; they're not needed
-- [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
-- [ ] self-correcting tests
+- [x] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
+- [ ] self-correcting file-driven tests
 - [ ] symbol table
 - [ ] never type
 - [ ] use spans to improve error messages

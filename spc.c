@@ -14,27 +14,33 @@
 #define MAX_INT_LITERAL_LEN 64
 
 enum TOKEN {
-    TOKEN_EOF = 0,
+    TOKEN_EOF,
     TOKEN_EXCLAMATION,
     TOKEN_EXCLAMATION_EQUAL,
     TOKEN_PERCENT,
+    TOKEN_AMPERSAND,
     TOKEN_AMPERSAND_AMPERSAND,
     TOKEN_LEFT_PAREN,
     TOKEN_RIGHT_PAREN,
     TOKEN_ASTERISK,
     TOKEN_PLUS,
     TOKEN_MINUS,
+    TOKEN_RIGHT_ARROW,
     TOKEN_SLASH,
     TOKEN_LESS_THAN,
     TOKEN_LESS_EQUAL,
+    TOKEN_LESS_LESS,
     TOKEN_EQUAL,
     TOKEN_EQUAL_EQUAL,
     TOKEN_GREATER_THAN,
     TOKEN_GREATER_EQUAL,
+    TOKEN_GREATER_GREATER,
+    TOKEN_CARET,
     TOKEN_LEFT_BRACE,
+    TOKEN_BAR,
     TOKEN_BAR_BAR,
     TOKEN_RIGHT_BRACE,
-    TOKEN_RIGHT_ARROW,
+    TOKEN_TILDE,
     TOKEN_KEYWORD_IF,
     TOKEN_KEYWORD_FN,
     TOKEN_KEYWORD_LET,
@@ -49,23 +55,29 @@ static char *TOKEN_NAMES[] = {
     "EXCLAMATION",
     "EXCLAMATION_EQUAL",
     "PERCENT",
+    "AMPERSAND",
     "AMPERSAND_AMPERSAND",
     "LEFT_PAREN",
     "RIGHT_PAREN",
     "ASTERISK",
     "PLUS",
     "MINUS",
+    "RIGHT_ARROW",
     "SLASH",
     "LESS_THAN",
     "LESS_EQUAL",
+    "LESS_LESS",
     "EQUAL",
     "EQUAL_EQUAL",
     "GREATER_THAN",
     "GREATER_EQUAL",
+    "GREATER_GREATER",
+    "CARET",
     "LEFT_BRACE",
+    "BAR",
     "BAR_BAR",
     "RIGHT_BRACE",
-    "RIGHT_ARROW",
+    "TILDE",
     "KEYWORD_IF",
     "KEYWORD_FN",
     "KEYWORD_LET",
@@ -76,67 +88,88 @@ static char *TOKEN_NAMES[] = {
 };
 
 enum UNARY_OP {
-    UNARY_OP_LOGICAL_NOT,
     UNARY_OP_NEG,
+    UNARY_OP_BITWISE_NOT,
+    UNARY_OP_LOGICAL_NOT,
 };
 
 enum BINARY_OP {
-    BINARY_OP_LOGICAL_OR,
-    BINARY_OP_LOGICAL_AND,
-    BINARY_OP_EQ,
-    BINARY_OP_NE,
+    BINARY_OP_MUL,
+    BINARY_OP_DIV,
+    BINARY_OP_REM,
+    BINARY_OP_ADD,
+    BINARY_OP_SUB,
+    BINARY_OP_SHL,
+    BINARY_OP_SHR,
     BINARY_OP_LT,
     BINARY_OP_LE,
     BINARY_OP_GT,
     BINARY_OP_GE,
-    BINARY_OP_ADD,
-    BINARY_OP_SUB,
-    BINARY_OP_MUL,
-    BINARY_OP_DIV,
-    BINARY_OP_REM,
+    BINARY_OP_EQ,
+    BINARY_OP_NE,
+    BINARY_OP_BITWISE_AND,
+    BINARY_OP_BITWISE_XOR,
+    BINARY_OP_BITWISE_OR,
+    BINARY_OP_LOGICAL_AND,
+    BINARY_OP_LOGICAL_OR,
 };
 
 static int UNARY_OP_RIGHT_BINDING_POWERS[] = {
-    [UNARY_OP_LOGICAL_NOT] = 70,
-    [UNARY_OP_NEG]         = 70,
+    [UNARY_OP_LOGICAL_NOT]  = 110,
+    [UNARY_OP_BITWISE_NOT]  = 110,
+    [UNARY_OP_NEG]          = 110,
 };
 
 static int BINARY_OP_LEFT_BINDING_POWERS[] = {
-    [BINARY_OP_LOGICAL_OR]  = 10,
-    [BINARY_OP_LOGICAL_AND] = 20,
-    [BINARY_OP_EQ]          = 30,
-    [BINARY_OP_NE]          = 30,
-    [BINARY_OP_LT]          = 30,
-    [BINARY_OP_LE]          = 40,
-    [BINARY_OP_GT]          = 40,
-    [BINARY_OP_GE]          = 40,
-    [BINARY_OP_ADD]         = 50,
-    [BINARY_OP_SUB]         = 50,
-    [BINARY_OP_MUL]         = 60,
-    [BINARY_OP_DIV]         = 60,
-    [BINARY_OP_REM]         = 60,
+    [BINARY_OP_MUL]         = 100,
+    [BINARY_OP_DIV]         = 100,
+    [BINARY_OP_REM]         = 100,
+    [BINARY_OP_ADD]         =  90,
+    [BINARY_OP_SUB]         =  90,
+    [BINARY_OP_SHL]         =  80,
+    [BINARY_OP_SHR]         =  80,
+    [BINARY_OP_LT]          =  70,
+    [BINARY_OP_LE]          =  70,
+    [BINARY_OP_GT]          =  70,
+    [BINARY_OP_GE]          =  70,
+    [BINARY_OP_EQ]          =  60,
+    [BINARY_OP_NE]          =  60,
+    [BINARY_OP_BITWISE_AND] =  50,
+    [BINARY_OP_BITWISE_XOR] =  40,
+    [BINARY_OP_BITWISE_OR]  =  30,
+    [BINARY_OP_LOGICAL_AND] =  20,
+    [BINARY_OP_LOGICAL_OR]  =  10,
 };
 
 static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
     // +1 for left-to-right associativity, -1 for right-to-left associativity
-    [BINARY_OP_LOGICAL_OR]  = 10 + 1,
-    [BINARY_OP_LOGICAL_AND] = 20 + 1,
-    [BINARY_OP_EQ]          = 30 + 1,
-    [BINARY_OP_NE]          = 30 + 1,
-    [BINARY_OP_LT]          = 40 + 1,
-    [BINARY_OP_LE]          = 40 + 1,
-    [BINARY_OP_GT]          = 40 + 1,
-    [BINARY_OP_GE]          = 40 + 1,
-    [BINARY_OP_ADD]         = 50 + 1,
-    [BINARY_OP_SUB]         = 50 + 1,
-    [BINARY_OP_MUL]         = 60 + 1,
-    [BINARY_OP_DIV]         = 60 + 1,
-    [BINARY_OP_REM]         = 60 + 1,
+    [BINARY_OP_MUL]         = 100 + 1,
+    [BINARY_OP_DIV]         = 100 + 1,
+    [BINARY_OP_REM]         = 100 + 1,
+    [BINARY_OP_ADD]         =  90 + 1,
+    [BINARY_OP_SUB]         =  90 + 1,
+    [BINARY_OP_SHL]         =  80 + 1,
+    [BINARY_OP_SHR]         =  80 + 1,
+    [BINARY_OP_LT]          =  70 + 1,
+    [BINARY_OP_LE]          =  70 + 1,
+    [BINARY_OP_GT]          =  70 + 1,
+    [BINARY_OP_GE]          =  70 + 1,
+    [BINARY_OP_EQ]          =  60 + 1,
+    [BINARY_OP_NE]          =  60 + 1,
+    [BINARY_OP_BITWISE_AND] =  50 + 1,
+    [BINARY_OP_BITWISE_XOR] =  40 + 1,
+    [BINARY_OP_BITWISE_OR]  =  30 + 1,
+    [BINARY_OP_LOGICAL_AND] =  20 + 1,
+    [BINARY_OP_LOGICAL_OR]  =  10 + 1,
 };
 
 enum TYPE {
     TYPE_UNIT,
     TYPE_I32,
+};
+
+static bool TYPE_SIGNED[] = {
+    [TYPE_I32] = true,
 };
 
 static char *TYPE_NAMES[] = {
@@ -210,7 +243,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
                 case '&': tok.kind = TOKEN_AMPERSAND_AMPERSAND; tok.len = 2; return tok;
                 }
             }
-            tok.kind = TOKEN_UNKNOWN;
+            tok.kind = TOKEN_AMPERSAND;
             return tok;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
@@ -242,6 +275,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
             if (tok.loc.idx + 1 < src_len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '=': tok.kind = TOKEN_LESS_EQUAL; tok.len = 2; return tok;
+                case '<': tok.kind = TOKEN_LESS_LESS; tok.len = 2; return tok;
                 }
             }
             tok.kind = TOKEN_LESS_THAN;
@@ -258,10 +292,12 @@ lex(char *src, size_t src_len, struct location from_loc) {
             if (tok.loc.idx + 1 < src_len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '=': tok.kind = TOKEN_GREATER_EQUAL; tok.len = 2; return tok;
+                case '>': tok.kind = TOKEN_GREATER_GREATER; tok.len = 2; return tok;
                 }
             }
             tok.kind = TOKEN_GREATER_THAN;
             return tok;
+        case '^': tok.kind = TOKEN_CARET; return tok;
         case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
         case '|':
             if (tok.loc.idx + 1 < src_len) {
@@ -269,9 +305,10 @@ lex(char *src, size_t src_len, struct location from_loc) {
                 case '|': tok.kind = TOKEN_BAR_BAR; tok.len = 2; return tok;
                 }
             }
-            tok.kind = TOKEN_UNKNOWN;
+            tok.kind = TOKEN_BAR;
             return tok;
         case '}': tok.kind = TOKEN_RIGHT_BRACE; return tok;
+        case '~': tok.kind = TOKEN_TILDE; return tok;
         case '_':
         case 'A' ... 'Z':
         case 'a' ... 'z':
@@ -608,26 +645,21 @@ static void
 emit_unary_op(struct context *ctx, enum UNARY_OP op) {
     emit_pop(ctx, "w0");
     switch (op) {
-    case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tw0, #0\n\tcset\tw0, eq\n" ); break;
     case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tw0, w0\n"); break;
+    case UNARY_OP_BITWISE_NOT: fprintf(ctx->output_file, "\tmvn\tw0, w0\n"); break;
+    case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tw0, #0\n\tcset\tw0, eq\n" ); break;
     default: assert(!"unreachable");
     }
     emit_push(ctx, "w0");
 }
 
 static void
-emit_binary_op(struct context *ctx, enum BINARY_OP op) {
+emit_binary_op(struct context *ctx, enum BINARY_OP op, enum TYPE left_type, enum TYPE right_type) {
+    assert(left_type == TYPE_I32);
+    assert(right_type == TYPE_I32);
     emit_pop(ctx, "w1");
     emit_pop(ctx, "w0");
     switch (op) {
-    case BINARY_OP_EQ: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, eq\n"); break;
-    case BINARY_OP_NE: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, ne\n"); break;
-    case BINARY_OP_LT: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, lt\n"); break;
-    case BINARY_OP_LE: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, le\n"); break;
-    case BINARY_OP_GT: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, gt\n"); break;
-    case BINARY_OP_GE: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, ge\n"); break;
-    case BINARY_OP_ADD: fprintf(ctx->output_file, "\tadd\tw0, w0, w1\n"); break;
-    case BINARY_OP_SUB: fprintf(ctx->output_file, "\tsub\tw0, w0, w1\n"); break;
     case BINARY_OP_MUL: fprintf(ctx->output_file, "\tmul\tw0, w0, w1\n"); break;
     case BINARY_OP_DIV: fprintf(ctx->output_file, "\tsdiv\tw0, w0, w1\n"); break;
     case BINARY_OP_REM:
@@ -637,6 +669,25 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op) {
             "\tsub\tw0, w0, w2\n"
         );
         break;
+    case BINARY_OP_ADD: fprintf(ctx->output_file, "\tadd\tw0, w0, w1\n"); break;
+    case BINARY_OP_SUB: fprintf(ctx->output_file, "\tsub\tw0, w0, w1\n"); break;
+    case BINARY_OP_SHL: fprintf(ctx->output_file, "\tlsl\tw0, w0, w1\n"); break;
+    case BINARY_OP_SHR:
+        if (TYPE_SIGNED[left_type]) {
+            fprintf(ctx->output_file, "\tasr\tw0, w0, w1\n");
+        } else {
+            fprintf(ctx->output_file, "\tlsr\tw0, w0, w1\n");
+        }
+        break;
+    case BINARY_OP_LT: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, lt\n"); break;
+    case BINARY_OP_LE: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, le\n"); break;
+    case BINARY_OP_GT: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, gt\n"); break;
+    case BINARY_OP_GE: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, ge\n"); break;
+    case BINARY_OP_EQ: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, eq\n"); break;
+    case BINARY_OP_NE: fprintf(ctx->output_file, "\tcmp\tw0, w1\n\tcset\tw0, ne\n"); break;
+    case BINARY_OP_BITWISE_AND: fprintf(ctx->output_file, "\tand\tw0, w0, w1\n");; break;
+    case BINARY_OP_BITWISE_XOR: fprintf(ctx->output_file, "\teor\tw0, w0, w1\n");; break;
+    case BINARY_OP_BITWISE_OR: fprintf(ctx->output_file, "\torr\tw0, w0, w1\n");; break;
     default: assert(!"unreachable");
     }
     emit_push(ctx, "w0");
@@ -761,27 +812,36 @@ compile_expr(struct context *ctx, int min_binding_power) {
         break;
     case TOKEN_INT_LITERAL: left_type = compile_int_literal(ctx, false); break;
     case TOKEN_IDENT: left_type = compile_fn_call(ctx); break;
+    case TOKEN_MINUS:
+    case TOKEN_TILDE:
     case TOKEN_EXCLAMATION:
-    case TOKEN_MINUS: left_type = compile_prefix_op_expr(ctx); break;
+        left_type = compile_prefix_op_expr(ctx);
+        break;
     default: fail_expected(ctx, "an expression");
     }
-    // EBNF: infix_op = "||" | "&&" | "==" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" ;
+    // EBNF: infix_op = "*" | "/" | "%" | "+" | "-" | "<<" | ">>"
+    //                | "<" | "<=" | ">" | ">=" | "==" | "!=" | "&&"  | "||" ;
     for (;;) {
         enum BINARY_OP op;
         switch (peek_token_kind(ctx)) {
-        case TOKEN_BAR_BAR:             op = BINARY_OP_LOGICAL_OR; break;
+        case TOKEN_ASTERISK:            op = BINARY_OP_MUL;         break;
+        case TOKEN_SLASH:               op = BINARY_OP_DIV;         break;
+        case TOKEN_PERCENT:             op = BINARY_OP_REM;         break;
+        case TOKEN_PLUS:                op = BINARY_OP_ADD;         break;
+        case TOKEN_MINUS:               op = BINARY_OP_SUB;         break;
+        case TOKEN_LESS_LESS:           op = BINARY_OP_SHL;         break;
+        case TOKEN_GREATER_GREATER:     op = BINARY_OP_SHR;         break;
+        case TOKEN_LESS_THAN:           op = BINARY_OP_LT;          break;
+        case TOKEN_LESS_EQUAL:          op = BINARY_OP_LE;          break;
+        case TOKEN_GREATER_THAN:        op = BINARY_OP_GT;          break;
+        case TOKEN_GREATER_EQUAL:       op = BINARY_OP_GE;          break;
+        case TOKEN_EQUAL_EQUAL:         op = BINARY_OP_EQ;          break;
+        case TOKEN_EXCLAMATION_EQUAL:   op = BINARY_OP_NE;          break;
+        case TOKEN_AMPERSAND:           op = BINARY_OP_BITWISE_AND; break;
+        case TOKEN_CARET:               op = BINARY_OP_BITWISE_XOR; break;
+        case TOKEN_BAR:                 op = BINARY_OP_BITWISE_OR;  break;
         case TOKEN_AMPERSAND_AMPERSAND: op = BINARY_OP_LOGICAL_AND; break;
-        case TOKEN_EQUAL_EQUAL:         op = BINARY_OP_EQ; break;
-        case TOKEN_EXCLAMATION_EQUAL:   op = BINARY_OP_NE; break;
-        case TOKEN_LESS_THAN:           op = BINARY_OP_LT; break;
-        case TOKEN_LESS_EQUAL:          op = BINARY_OP_LE; break;
-        case TOKEN_GREATER_THAN:        op = BINARY_OP_GT; break;
-        case TOKEN_GREATER_EQUAL:       op = BINARY_OP_GE; break;
-        case TOKEN_PLUS:                op = BINARY_OP_ADD; break;
-        case TOKEN_MINUS:               op = BINARY_OP_SUB; break;
-        case TOKEN_ASTERISK:            op = BINARY_OP_MUL; break;
-        case TOKEN_SLASH:               op = BINARY_OP_DIV; break;
-        case TOKEN_PERCENT:             op = BINARY_OP_REM; break;
+        case TOKEN_BAR_BAR:             op = BINARY_OP_LOGICAL_OR;  break;
         default: return left_type;
         }
         if (BINARY_OP_LEFT_BINDING_POWERS[op] < min_binding_power) {
@@ -839,7 +899,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
             if (right_type != TYPE_I32) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
             }
-            emit_binary_op(ctx, op);
+            emit_binary_op(ctx, op, left_type, right_type);
             result_type = TYPE_I32; // TODO: infer type
             break;
         }
@@ -890,14 +950,6 @@ compile_prefix_op_expr(struct context *ctx) {
     // EBNF: prefix_op = "!" | "-" ;
     enum TYPE return_type;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_EXCLAMATION:
-        take_token_expect_kind(ctx, NULL, TOKEN_EXCLAMATION);
-        return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
-        if (return_type != TYPE_I32) {
-            fail_type_mismatch(ctx, ctx->tokens[ctx->token_offset], TYPE_I32, return_type);
-        }
-        emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
-        break;
     case TOKEN_MINUS:
         take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
         if (peek_token_kind(ctx) == TOKEN_INT_LITERAL) {
@@ -912,6 +964,22 @@ compile_prefix_op_expr(struct context *ctx) {
             }
             emit_unary_op(ctx, UNARY_OP_NEG);
         }
+        break;
+    case TOKEN_TILDE:
+        take_token_expect_kind(ctx, NULL, TOKEN_TILDE);
+        return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_BITWISE_NOT]);
+        if (return_type != TYPE_I32) {
+            fail_type_mismatch(ctx, ctx->tokens[ctx->token_offset], TYPE_I32, return_type);
+        }
+        emit_unary_op(ctx, UNARY_OP_BITWISE_NOT);
+        break;
+    case TOKEN_EXCLAMATION:
+        take_token_expect_kind(ctx, NULL, TOKEN_EXCLAMATION);
+        return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
+        if (return_type != TYPE_I32) {
+            fail_type_mismatch(ctx, ctx->tokens[ctx->token_offset], TYPE_I32, return_type);
+        }
+        emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
         break;
     default: assert(!"unreachable");
     }
