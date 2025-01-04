@@ -65,19 +65,22 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] statements in functions; `__builtin_trap` intrinsic
 - [x] if/else expessions and basic type checking
 - [x] remove semicolons; they're not needed
-- [ ] self-correcting tests
-- [ ] use spans to improve error messages
-- [ ] write to tmp file then move into place on success
 - [ ] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
-- [ ] push-pop annihilation
-- [ ] reference types
-- [ ] string literals
-- [ ] printing via printf
+- [ ] self-correcting tests
+- [ ] symbol table
+- [ ] never type
+- [ ] use spans to improve error messages
+- [ ] write to tmp file then move into place on success to fix make behavior
 - [ ] local variables
-- [ ] u8 type
-- [ ] type checking
-- [ ] type conversion
-- [ ] bool type
+- [ ] named return slots a la go?
+- [ ] u1 / bool type
+- [ ] u8 type, integer literal suffixes, type promotion
+- [ ] explicit type conversion
+- [ ] byte character literals
+- [ ] reference types?
+- [ ] byte string literals
+- [ ] printing via printf
+- [ ] optimization: push-pop annihilation
 - [ ] boolean arithmetic
 - [ ] if/else branches
 - [ ] unconditional loops, continue, and break
