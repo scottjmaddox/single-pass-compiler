@@ -4,16 +4,10 @@ A single-pass compiler, for learning, that targets the Apple M1 chip.
 
 ## Building
 
-To build the compiler, run:
+To build and run the compiler on the examples, and run the run tests:
 
 ```sh
-make spc
-```
-
-To build the examples, run:
-
-```sh
-make examples
+make
 ```
 
 ## Grammar
@@ -33,17 +27,35 @@ fn_call = ident "(" ")" ;
 op_expr = prefix_op expr | expr infix_op expr ;
 
 ident = alpha { alphanumeric } ;
-int_literal = digit { "_" | digit } ;
+int_literal = dec_literal | bin_literal | oct_literal | hex_literal ;
+dec_literal = dec_digit { "_" | dec_digit } ;
+bin_literal = "0b" { "_" | bin_digit } bin_digit { "_" | bin_digit } ;
+oct_literal = "0o" { "_" | oct_digit } oct_digit { "_" | oct_digit } ;
+hex_literal = "0x" { "_" | hex_digit } hex_digit { "_" | hex_digit } ;
 
-alphanumeric = alpha | digit ;
+alphanumeric = alpha | dec_digit ;
 alpha = "_" | "A" .. "Z" | "a" .. "z" ;
-digit = "0" .. "9" ;
+bin_digit = "0" .. "1" ;
+oct_digit = "0" .. "7" ;
+dec_digit = "0" .. "9" ;
+hex_digit = "0" .. "9" | "a" .. "f" | "A" .. "F" ;
 
 prefix_op = "-" | "!" | "~" ;
 infix_op = "*" | "/" | "%" | "+" | "-" | "<<" | ">>"
          | "<" | "<=" | ">" | ">=" | "==" | "!=" | "&&"  | "||" ;
 
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
+```
+
+The following lexical forms that ambiguously resemble number literals are disallowed:
+
+```ebnf
+reserved_number = bin_literal ( "2" .. "9" )
+                | oct_literal ( "8" .. "9" )
+                | int_literal ( "." | "a" .. "f" | "A" .. "F" )
+                | "0b" { "_" }
+                | "0o" { "_" }
+                | "0x" { "_" }
 ```
 
 ## References
@@ -67,12 +79,18 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [x] if/else expessions and basic type checking
 - [x] remove semicolons; they're not needed
 - [x] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
-- [ ] self-correcting file-driven tests
+- [x] hex, octal, and binary integer literals
 - [ ] symbol table
-- [ ] never type
-- [ ] use spans to improve error messages
-- [ ] write to tmp file then move into place on success to fix make behavior
 - [ ] local variables
+- [ ] unconditional loops, continue, and break
+- [ ] while loops
+- [ ] arithmetic fuzz testing (comparing against C)
+- [ ] optional function returns
+- [ ] function parameters and optional return values
+- [ ] write to tmp file then move into place on success to fix make behavior
+- [ ] self-correcting file-driven build-failure-tests
+- [ ] use spans to improve error messages
+- [ ] never type
 - [ ] named return slots a la go?
 - [ ] u1 / bool type
 - [ ] u8 type, integer literal suffixes, type promotion
@@ -84,6 +102,5 @@ line_comment ::= "//" { ? any character except '\n' ? } "\n"
 - [ ] optimization: push-pop annihilation
 - [ ] boolean arithmetic
 - [ ] if/else branches
-- [ ] unconditional loops, continue, and break
 - [ ] output to stdout on `-o -`
 - [ ] `-g` / `--debug` option

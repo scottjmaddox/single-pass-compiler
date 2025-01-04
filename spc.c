@@ -9,6 +9,7 @@
 #include <errno.h>         // For errno
 #include <string.h>        // For strerror()
 #include <assert.h>        // For assert()
+#include <limits.h>        // For ULLONG_MAX, LLONG_MAX
 
 #define MAX_TOKEN_LOOKAHEAD 2
 #define MAX_INT_LITERAL_LEN 64
@@ -47,6 +48,7 @@ enum TOKEN {
     TOKEN_KEYWORD_ELSE,
     TOKEN_IDENT,
     TOKEN_INT_LITERAL,
+    TOKEN_RESERVED_NUM,
     TOKEN_UNKNOWN,
 };
 
@@ -84,6 +86,7 @@ static char *TOKEN_NAMES[] = {
     "KEYWORD_ELSE",
     "IDENT",
     "INT_LITERAL",
+    "RESERVED_NUM"
     "UNKNOWN",
 };
 
@@ -213,10 +216,12 @@ struct context {
 //////////////////////
 
 static struct token
-lex(char *src, size_t src_len, struct location from_loc) {
-    struct token tok = { .kind = TOKEN_UNKNOWN, .len = 1, .loc = from_loc };
+lex(struct context *ctx) {
+    char *src = ctx->src;
+    size_t len = ctx->src_len;
+    struct token tok = { .kind = TOKEN_UNKNOWN, .len = 1, .loc = ctx->src_loc };
     size_t i;
-    while (tok.loc.idx < src_len) {
+    while (tok.loc.idx < len) {
         switch (src[tok.loc.idx]) {
         case ' ':
         case '\t':
@@ -229,7 +234,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.loc.col = 1;
             continue;
         case '!':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '=': tok.kind = TOKEN_EXCLAMATION_EQUAL; tok.len = 2; return tok;
                 }
@@ -238,7 +243,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
             return tok;
         case '%': tok.kind = TOKEN_PERCENT; return tok;
         case '&':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '&': tok.kind = TOKEN_AMPERSAND_AMPERSAND; tok.len = 2; return tok;
                 }
@@ -250,7 +255,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
         case '+': tok.kind = TOKEN_PLUS; return tok;
         case '*': tok.kind = TOKEN_ASTERISK; return tok;
         case '-':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '>': tok.kind = TOKEN_RIGHT_ARROW; tok.len = 2; return tok;
                 }
@@ -258,12 +263,12 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_MINUS;
             return tok;
         case '/':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '/':
                     // line comment
                     i = tok.loc.idx + 2;
-                    while (i < src_len && src[i] != '\n') { i += 1; }
+                    while (i < len && src[i] != '\n') { i += 1; }
                     tok.loc.col += i - tok.loc.idx;
                     tok.loc.idx = i;
                     continue;
@@ -272,7 +277,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_SLASH;
             return tok;
         case '<':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '=': tok.kind = TOKEN_LESS_EQUAL; tok.len = 2; return tok;
                 case '<': tok.kind = TOKEN_LESS_LESS; tok.len = 2; return tok;
@@ -281,7 +286,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_LESS_THAN;
             return tok;
         case '=':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '=': tok.kind = TOKEN_EQUAL_EQUAL; tok.len = 2; return tok;
                 }
@@ -289,7 +294,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_EQUAL;
             return tok;
         case '>':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '=': tok.kind = TOKEN_GREATER_EQUAL; tok.len = 2; return tok;
                 case '>': tok.kind = TOKEN_GREATER_GREATER; tok.len = 2; return tok;
@@ -300,7 +305,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
         case '^': tok.kind = TOKEN_CARET; return tok;
         case '{': tok.kind = TOKEN_LEFT_BRACE; return tok;
         case '|':
-            if (tok.loc.idx + 1 < src_len) {
+            if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '|': tok.kind = TOKEN_BAR_BAR; tok.len = 2; return tok;
                 }
@@ -313,7 +318,7 @@ lex(char *src, size_t src_len, struct location from_loc) {
         case 'A' ... 'Z':
         case 'a' ... 'z':
             i = tok.loc.idx + 1;
-            while (i < src_len) {
+            while (i < len) {
                 switch (src[i]) {
                 case '_':
                 case 'A' ... 'Z':
@@ -340,17 +345,73 @@ lex(char *src, size_t src_len, struct location from_loc) {
             tok.kind = TOKEN_IDENT;
             return tok;
         case '0' ... '9':
-            i = tok.loc.idx + 1;
-            while (i < src_len) {
+            i = tok.loc.idx;
+            bool has_digit = false;
+            bool is_reserved = false;
+            if (src[i] == '0' && i + 1 < len
+            && (src[i + 1] == 'b' || src[i + 1] == 'o' || src[i + 1] == 'x')) {
+                i += 1;
                 switch (src[i]) {
-                case '_':
-                case '0' ... '9':
+                case 'b':
+                    // binary literal
                     i += 1;
-                    continue;
+                    while (i < len) {
+                        switch (src[i]) {
+                        case '_': i += 1; continue;
+                        case '0' ... '1': i += 1; has_digit = true; continue;
+                        case '2' ... '9': i += 1; is_reserved = true; break;
+                        }
+                        break;
+                    }
+                    break;
+                case 'o':
+                    // octal literal
+                    i += 1;
+                    while (i < len) {
+                        switch (src[i]) {
+                        case '_': i += 1; continue;
+                        case '0' ... '7': i += 1; has_digit = true; continue;
+                        case '8' ... '9': i += 1; is_reserved = true; break;
+                        }
+                        break;
+                    }
+                    break;
+                case 'x':
+                    // hexadecimal literal
+                    i += 1;
+                    while (i < len) {
+                        switch (src[i]) {
+                        case '_': i += 1; continue;
+                        case '0' ... '9':
+                        case 'A' ... 'F':
+                        case 'a' ... 'f': i += 1; has_digit = true; continue;
+                        }
+                        break;
+                    }
+                    break;
+                default: assert(!"unreachable");
                 }
-                break;
+            } else {
+                // decimal literal
+                has_digit = true;
+                i += 1;
+                while (i < len) {
+                    switch (src[i]) {
+                    case '_':
+                    case '0' ... '9': i += 1; continue;
+                    }
+                    break;
+                }
             }
-            tok.kind = TOKEN_INT_LITERAL;
+            if (i + 1 < len) {
+                switch (src[i + 1]) {
+                case '.':
+                case 'A' ... 'Z':
+                case 'a' ... 'z': i += 1; is_reserved = true; break;
+                }
+            }
+            is_reserved = is_reserved || !has_digit;
+            tok.kind = is_reserved ? TOKEN_RESERVED_NUM : TOKEN_INT_LITERAL;
             tok.len = i - tok.loc.idx;
             return tok;
         }
@@ -377,7 +438,7 @@ push_token(struct context *ctx, struct token tok) {
 static void
 fill_tokens(struct context *ctx) {
     while (ctx->token_count < MAX_TOKEN_LOOKAHEAD) {
-        struct token tok = lex(ctx->src, ctx->src_len, ctx->src_loc);
+        struct token tok = lex(ctx);
         push_token(ctx, tok);
     }
 }
@@ -505,10 +566,10 @@ fail_type_mismatch(struct context *ctx, struct token tok, enum TYPE expected_typ
 }
 
 static void
-fail_int_literal_too_long(struct context *ctx, struct token tok) {
-    fprintf(stderr, "error: integer literal too long\n");
+fail_int_literal_out_of_range(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: integer literal out of range\n");
     eprint_token_line(ctx, tok);
-    fprintf(stderr, "Maximum allowed length (excluding underscores): %d\n", MAX_INT_LITERAL_LEN);
+    fprintf(stderr, "Range: %lld to %lld\n", LLONG_MIN, LLONG_MAX);
     exit(EXIT_FAILURE);
 }
 
@@ -522,22 +583,6 @@ take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN to
     if (tok_out != NULL) {
         *tok_out = tok;
     }
-}
-
-int // 0 on success, -1 on buffer overflow
-remove_underscores(char *in, size_t in_len, char *out, size_t out_cap, size_t *out_len) {
-    size_t j = 0;
-    for (size_t i = 0; i < in_len; i++) {
-        if (in[i] != '_') {
-            if (j < out_cap) {
-                out[j++] = in[i];
-            } else {
-                return -1;
-            }
-        }
-    }
-    *out_len = j;
-    return 0;
 }
 
 //////////////////////
@@ -694,9 +739,9 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, enum TYPE left_type, enum
 }
 
 static void
-emit_int_literal(struct context *ctx, char *lit, size_t lit_len) {
+emit_int_literal(struct context *ctx, long long int value) {
     // push the literal onto the stack
-    fprintf(ctx->output_file, "\tldr\tw0, =%.*s\n", (int)lit_len, lit);
+    fprintf(ctx->output_file, "\tldr\tw0, =%lld\n", value);
     emit_push(ctx, "w0");
 }
 
@@ -863,10 +908,10 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
             }
             emit_local_forward_branch_if_nonzero(ctx, true_label);
-            emit_int_literal(ctx, "0", 1);
+            emit_int_literal(ctx, 0);
             emit_local_forward_branch(ctx, done_label);
             emit_local_label(ctx, true_label);
-            emit_int_literal(ctx, "1", 1);
+            emit_int_literal(ctx, 1);
             emit_local_label(ctx, done_label);
             result_type = TYPE_I32; // TODO: return TYPE_BOOL
             break;
@@ -883,10 +928,10 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 fail_type_mismatch(ctx, op_tok, TYPE_I32, right_type);
             }
             emit_local_forward_branch_if_zero(ctx, false_label);
-            emit_int_literal(ctx, "1", 1);
+            emit_int_literal(ctx, 1);
             emit_local_forward_branch(ctx, done_label);
             emit_local_label(ctx, false_label);
-            emit_int_literal(ctx, "0", 1);
+            emit_int_literal(ctx, 0);
             emit_local_label(ctx, done_label);
             result_type = TYPE_I32; // TODO: return TYPE_BOOL
             break;
@@ -1009,20 +1054,94 @@ static enum TYPE
 compile_int_literal(struct context *ctx, bool negate) {
     struct token tok;
     take_token_expect_kind(ctx, &tok, TOKEN_INT_LITERAL);
-    char lit[MAX_INT_LITERAL_LEN];
-    size_t lit_len;
-    char *out = lit;
-    size_t out_cap = MAX_INT_LITERAL_LEN;
+    unsigned long long int uvalue = 0;
+    char *src = ctx->src + tok.loc.idx;
+    size_t len = tok.len;
+    size_t i = 0;
+    if (src[i] == '0' && i + 1 < len
+    && (src[i + 1] == 'b' || src[i + 1] == 'o' || src[i + 1] == 'x')) {
+        switch (src[i + 1]) {
+        case 'b':
+            // binary literal
+            for (i += 2; i < len; i++) {
+                if (src[i] == '_') { continue; }
+                if (__builtin_mul_overflow(uvalue, 2, &uvalue)) {
+                    fail_int_literal_out_of_range(ctx, tok);
+                }
+                char digit = src[i] - '0';
+                assert(digit < 2);
+                if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                    fail_int_literal_out_of_range(ctx, tok);
+                }
+            }
+            break;
+        case 'o':
+            // octal literal
+            for (i += 2; i < len; i++) {
+                if (src[i] == '_') { continue; }
+                if (__builtin_mul_overflow(uvalue, 8, &uvalue)) {
+                    fail_int_literal_out_of_range(ctx, tok);
+                }
+                char digit = src[i] - '0';
+                assert(digit < 8);
+                if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                    fail_int_literal_out_of_range(ctx, tok);
+                }
+            }
+            break;
+        case 'x':
+            // hexadecimal literal
+            for (i += 2; i < len; i++) {
+                if (src[i] == '_') { continue; }
+                if (__builtin_mul_overflow(uvalue, 16, &uvalue)) {
+                    fail_int_literal_out_of_range(ctx, tok);
+                }
+                char digit;
+                if (src[i] >= '0' && src[i] <= '9') {
+                    digit = src[i] - '0';
+                } else if (src[i] >= 'A' && src[i] <= 'F') {
+                    digit = src[i] - 'A' + 10;
+                } else if (src[i] >= 'a' && src[i] <= 'f') {
+                    digit = src[i] - 'a' + 10;
+                } else {
+                    assert(!"unreachable");
+                }
+                assert(digit < 16);
+                if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                    fail_int_literal_out_of_range(ctx, tok);
+                }
+            }
+            break;
+        default: assert(!"unreachable");
+        }
+    } else {
+        // decimal literal
+        for (; i < len; i++) {
+            if (src[i] == '_') { continue; }
+            if (__builtin_mul_overflow(uvalue, 10, &uvalue)) {
+                fail_int_literal_out_of_range(ctx, tok);
+            }
+            char digit = src[i] - '0';
+            assert(digit < 10);
+            if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                fail_int_literal_out_of_range(ctx, tok);
+            }
+        }
+    }
+    if (negate && uvalue > LLONG_MAX) {
+        fail_int_literal_out_of_range(ctx, tok);
+    }
+    long long int value;
     if (negate) {
-        lit[0] = '-';
-        out += 1;
-        out_cap -= 1;
+        if (__builtin_sub_overflow(0, uvalue, &value)) {
+            fail_int_literal_out_of_range(ctx, tok);
+        }
+    } else {
+        if (__builtin_add_overflow(0, uvalue, &value)) {
+            fail_int_literal_out_of_range(ctx, tok);
+        }
     }
-    if (remove_underscores(ctx->src + tok.loc.idx, tok.len, out, out_cap, &lit_len) == -1) {
-        fail_int_literal_too_long(ctx, tok);
-    }
-    if (negate) { lit_len += 1; }
-    emit_int_literal(ctx, lit, lit_len);
+    emit_int_literal(ctx, value);
     return TYPE_I32;
 }
 

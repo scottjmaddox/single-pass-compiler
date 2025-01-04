@@ -1,0 +1,10 @@
+let main = fn() {
+    if 0b0 != 0 { __builtin_trap() }
+    if 0b11 != 3 { __builtin_trap() }
+
+    if 0o0 != 0 { __builtin_trap() }
+    if 0o77 != 63 { __builtin_trap() }
+
+    if 0x0 != 0 { __builtin_trap() }
+    if 0xff != 255 { __builtin_trap() }
+}
