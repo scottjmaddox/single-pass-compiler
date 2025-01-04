@@ -4,7 +4,7 @@ A single-pass compiler, for learning, that targets the Apple M1 chip.
 
 ## Building
 
-To build and run the compiler on the examples, and run the run tests:
+To build and run the compiler on the examples and run the tests:
 
 ```sh
 make
@@ -47,7 +47,7 @@ infix_op = "*" | "/" | "%" | "+" | "-" | "<<" | ">>"
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
 
-The following lexical forms that ambiguously resemble number literals are disallowed:
+The following lexical forms that ambiguously resemble number literals are reserved:
 
 ```ebnf
 reserved_number = bin_literal ( "2" .. "9" )
@@ -81,7 +81,8 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
 - [x] hex, octal, and binary integer literals
 - [x] write output to tmp file then move into place on success
-- [ ] self-correcting file-driven build-failure-tests
+- [x] self-correcting file-driven build failure tests
+- [ ] add failure tests
 - [ ] use spans to improve error messages
 - [ ] symbol table and optional function returns
 - [ ] never type

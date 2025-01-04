@@ -1,0 +1,6 @@
+error: unexpected token: RESERVED
+ --> tests/failure/6.spl:1:26
+  |
+  | let main = fn() -> i32 { 0b___ }
+  |                          ^^^^^
+Expected an expression.

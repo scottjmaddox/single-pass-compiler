@@ -1,0 +1,6 @@
+error: unexpected token: INT_LITERAL
+ --> tests/failure/2.spl:1:1
+  |
+  | 1
+  | ^
+Expected a let statement.

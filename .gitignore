@@ -4,6 +4,8 @@
 /examples/*
 !/examples/*.c
 !/examples/*.spl
-/run-tests/*
-!/run-tests/*.c
-!/run-tests/*.spl
+/tests/failure/*
+!/tests/failure/*.spl
+!/tests/failure/*.txt
+/tests/success/*
+!/tests/success/*.spl
