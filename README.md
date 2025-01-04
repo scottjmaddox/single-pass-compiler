@@ -80,27 +80,27 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] remove semicolons; they're not needed
 - [x] bitwise operators: `~`, `&`, `|`, `^`, `<<`, `>>`
 - [x] hex, octal, and binary integer literals
-- [ ] symbol table
-- [ ] local variables
-- [ ] unconditional loops, continue, and break
-- [ ] while loops
-- [ ] arithmetic fuzz testing (comparing against C)
-- [ ] optional function returns
-- [ ] function parameters and optional return values
-- [ ] write to tmp file then move into place on success to fix make behavior
+- [x] write output to tmp file then move into place on success
 - [ ] self-correcting file-driven build-failure-tests
 - [ ] use spans to improve error messages
+- [ ] symbol table and optional function returns
 - [ ] never type
-- [ ] named return slots a la go?
-- [ ] u1 / bool type
+- [ ] u1 type
+- [ ] rename current `let` to `const`
+- [ ] local `let` variables
+- [ ] `loop`, `continue`, and `break` with optional label and value
+- [ ] function parameters
+- [ ] arithmetic fuzz testing (comparing against C with `-ftrapv`)
+- [ ] struct types
+- [ ] non-copy, non-move, non-drop types
+- [ ] copy, move, drop methods
+- [ ] named return slots a la go? with uninitialized tracking
 - [ ] u8 type, integer literal suffixes, type promotion
 - [ ] explicit type conversion
 - [ ] byte character literals
 - [ ] reference types?
 - [ ] byte string literals
-- [ ] printing via printf
+- [ ] printing via printf?
 - [ ] optimization: push-pop annihilation
-- [ ] boolean arithmetic
-- [ ] if/else branches
 - [ ] output to stdout on `-o -`
 - [ ] `-g` / `--debug` option

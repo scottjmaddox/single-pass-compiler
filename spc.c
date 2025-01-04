@@ -1163,6 +1163,21 @@ get_default_output_file_path(const char *input_file_path, char *output_file_path
     strcat(output_file_path, ".s");
 }
 
+static char tmp_output_file_path[] = "/tmp/spc-XXXXXX";
+static int tmp_output_fd = -1;
+static FILE *tmp_output_file = NULL;
+
+void cleanup_tmp_output(void) {
+    if (tmp_output_file != NULL) {
+        fclose(tmp_output_file);
+    } else if (tmp_output_fd != -1) {
+        close(tmp_output_fd);
+    }
+    if (tmp_output_file_path[0] != '\0') {
+        remove(tmp_output_file_path);
+    }
+}
+
 int
 main(int argc, char *argv[]) {
     // Parse command line options
@@ -1177,7 +1192,7 @@ main(int argc, char *argv[]) {
             case '?':
                 // getopt already prints an error message for unknown options
                 fprintf(stderr, "Usage: %s [-o OUT_FILE] FILE\n", argv[0]);
-                exit(EXIT_FAILURE);
+                return EXIT_FAILURE;
             default:
                 assert(!"unreachable");
         }
@@ -1186,7 +1201,7 @@ main(int argc, char *argv[]) {
     if (optind >= argc) {
         fprintf(stderr, "Expected FILE argument after options\n");
         fprintf(stderr, "Usage: %s [-o OUT_FILE] FILE\n", argv[0]);
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
     char *input_file_path = argv[optind];
     if (output_file_path == NULL) {
@@ -1195,40 +1210,56 @@ main(int argc, char *argv[]) {
     }
 
     // Open the input file
-    int fd = open(input_file_path, O_RDONLY);
-    if (fd == -1) {
+    int input_fd = open(input_file_path, O_RDONLY);
+    if (input_fd == -1) {
         fprintf(stderr, "internal compiler error while opening file '%s': %s\n", input_file_path, strerror(errno));
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
 
     // Get the input file size
     struct stat sb;
-    if (fstat(fd, &sb) == -1) {
+    if (fstat(input_fd, &sb) == -1) {
         fprintf(stderr, "internal compiler error while getting file size for '%s': %s\n", input_file_path, strerror(errno));
-        if (close(fd) == -1) { fprintf(stderr, "internal compiler error while closing file '%s': %s\n", input_file_path, strerror(errno)); }
-        exit(EXIT_FAILURE);
+        if (close(input_fd) == -1) { fprintf(stderr, "internal compiler warning while closing file '%s': %s\n", input_file_path, strerror(errno)); }
+        return EXIT_FAILURE;
     }
     size_t input_file_size = sb.st_size;
     void *mapped_input_file = NULL;
     if (input_file_size != 0) {
         // Memory-map the input file
-        mapped_input_file = mmap(NULL, input_file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        mapped_input_file = mmap(NULL, input_file_size, PROT_READ, MAP_PRIVATE, input_fd, 0);
         if (mapped_input_file == MAP_FAILED) {
             fprintf(stderr, "internal compiler error while mapping file '%s': %s\n", input_file_path, strerror(errno));
-            if (close(fd) == -1) { fprintf(stderr, "internal compiler error while closing file '%s': %s\n", input_file_path, strerror(errno)); }
-            exit(EXIT_FAILURE);
+            if (close(input_fd) == -1) { fprintf(stderr, "internal compiler warning while closing file '%s': %s\n", input_file_path, strerror(errno)); }
+            return EXIT_FAILURE;
         }
     }
-    if (close(fd) == -1) {
-        fprintf(stderr, "internal compiler error while closing file '%s': %s\n", input_file_path, strerror(errno));
-        // Continue even if close fails
+    if (close(input_fd) == -1) {
+        fprintf(stderr, "internal compiler warning while closing file '%s': %s\n", input_file_path, strerror(errno));
+        // Continue anyway
+    }
+    if (mapped_input_file == NULL) {
+        fprintf(stderr, "error: empty input file '%s'\n", input_file_path);
+        return EXIT_FAILURE;
     }
 
-    // Open the output file
-    FILE *output_file = fopen(output_file_path, "w");
+    // Prepare a temporary file for the output
+    // char tmp_output_file_path[] = "/tmp/spc-XXXXXX";
+    tmp_output_fd = mkstemp(tmp_output_file_path);
+    if (tmp_output_fd == -1) {
+        fprintf(stderr, "internal compiler error while creating temporary file: %s\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
+    atexit(cleanup_tmp_output);
+    tmp_output_file = fdopen(tmp_output_fd, "w");
+    if (tmp_output_file == NULL) {
+        fprintf(stderr, "internal compiler error while opening temporary file: %s\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
 
+    // Compile the program
     struct context ctx = {
-        .output_file = output_file,
+        .output_file = tmp_output_file,
         .input_file_path = input_file_path,
         .src = (char *)mapped_input_file,
         .src_len = input_file_size,
@@ -1236,16 +1267,19 @@ main(int argc, char *argv[]) {
     };
     compile_program(&ctx);
 
-    // Close the output file
-    if (fclose(output_file) == EOF) {
-        fprintf(stderr, "internal compiler error while closing file '%s': %s\n", output_file_path, strerror(errno));
-        exit(EXIT_FAILURE);
+    if (fclose(tmp_output_file) != 0) {
+        fprintf(stderr, "internal compiler error while closing temporary file: %s\n", strerror(errno));
+        return EXIT_FAILURE;
     }
+    tmp_output_file = NULL;
+    tmp_output_fd = -1;
 
-    // Unmap the input file
-    if (mapped_input_file != NULL && munmap(mapped_input_file, input_file_size) == -1) {
-        fprintf(stderr, "internal compiler error while unmapping file '%s': %s\n", input_file_path, strerror(errno));
-        exit(EXIT_FAILURE);
+    if (rename(tmp_output_file_path, output_file_path) != 0) {
+        fprintf(stderr, "internal compiler error while moving temporary file to '%s': %s\n",
+                output_file_path, strerror(errno));
+        return EXIT_FAILURE;
     }
+    tmp_output_file_path[0] = '\0';
+
     return 0;
 }
