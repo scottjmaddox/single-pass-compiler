@@ -48,7 +48,7 @@ enum TOKEN {
     TOKEN_KEYWORD_ELSE,
     TOKEN_IDENT,
     TOKEN_INT_LITERAL,
-    TOKEN_RESERVED_NUM,
+    TOKEN_RESERVED,
     TOKEN_UNKNOWN,
 };
 
@@ -86,7 +86,7 @@ static char *TOKEN_NAMES[] = {
     "KEYWORD_ELSE",
     "IDENT",
     "INT_LITERAL",
-    "RESERVED_NUM"
+    "RESERVED",
     "UNKNOWN",
 };
 
@@ -411,7 +411,7 @@ lex(struct context *ctx) {
                 }
             }
             is_reserved = is_reserved || !has_digit;
-            tok.kind = is_reserved ? TOKEN_RESERVED_NUM : TOKEN_INT_LITERAL;
+            tok.kind = is_reserved ? TOKEN_RESERVED : TOKEN_INT_LITERAL;
             tok.len = i - tok.loc.idx;
             return tok;
         }
