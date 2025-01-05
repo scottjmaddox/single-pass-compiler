@@ -485,13 +485,8 @@ get_token_line(struct context *ctx, struct token tok) {
     size_t line = 1;
     while (line < tok.loc.line) {
         switch (ctx->src[idx]) {
-        case '\n':
-            idx += 1;
-            line += 1;
-            break;
-        default:
-            idx += 1;
-            break;
+        case '\n': idx += 1; line += 1; break;
+        default: idx += 1; break;
         }
     }
     size_t len = 0;
@@ -806,22 +801,24 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
     enum TYPE expected_type = TYPE_UNIT;
-    struct token type_tok;
+    struct token type_or_name_tok;
     if (peek_token_kind(ctx) == TOKEN_RIGHT_ARROW) {
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_ARROW);
-        take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
-        if (token_equals(ctx, type_tok, "i32")) {
+        take_token_expect_kind(ctx, &type_or_name_tok, TOKEN_IDENT);
+        if (token_equals(ctx, type_or_name_tok, "i32")) {
             expected_type = TYPE_I32;
         } else {
             // TODO: support unit return type
             fail_expected(ctx, "i32");
         }
+    } else {
+        type_or_name_tok = *name_tok;
     }
     ctx->local_label_count = 0;
     emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
     enum TYPE return_type = compile_block(ctx);
     if (return_type != expected_type) {
-        fail_type_mismatch(ctx, type_tok, expected_type, return_type);
+        fail_type_mismatch(ctx, type_or_name_tok, expected_type, return_type);
     }
     emit_fn_epilogue(ctx, return_type);
 }

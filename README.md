@@ -82,7 +82,6 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] hex, octal, and binary integer literals
 - [x] write output to tmp file then move into place on success
 - [x] self-correcting file-driven build failure tests
-- [ ] add failure tests
 - [ ] use spans to improve error messages
 - [ ] symbol table and optional function returns
 - [ ] never type

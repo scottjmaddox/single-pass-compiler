@@ -73,7 +73,7 @@ tests/failure/%.spl:
 
 test-success: $(TEST_SUCCESS_EXECUTABLES)
 	@for test in $(TEST_SUCCESS_EXECUTABLES); do \
-		echo "Running success test $$test"; \
+		echo "Running $$test..."; \
 		./$$test; \
 		if [ $$? -ne 0 ]; then \
 			echo "Test $$test failed"; \

@@ -1,0 +1,7 @@
+error: type mismatch:
+ --> tests/failure/9.spl:1:5
+  |
+  | let main = fn() { 0 }
+  |     ^^^^
+Expected type: unit
+Actual type: i32

@@ -1,0 +1,6 @@
+error: reserved identifier
+ --> tests/failure/7.spl:1:5
+  |
+  | let __builtin = fn() {}
+  |     ^^^^^^^^^
+Identifiers starting with '__builtin' are reserved.
