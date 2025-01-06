@@ -15,9 +15,8 @@ make
 The currently supported grammar, in extended Backus–Naur form (EBNF):
 
 ```ebnf
-program = { static_stmnt } ;
-static_stmnt = static_let_stmnt ;
-static_let_stmnt = "let" ident "=" fn_def ;
+program = { const_def } ;
+const_def = "const" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
@@ -84,10 +83,9 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] self-correcting file-driven build failure tests
 - [x] use spans to improve error messages
 - [x] symbol table and optional function returns
+- [ ] local `let` variables
 - [ ] never type
 - [ ] u1 type
-- [ ] rename current `let` to `const`
-- [ ] local `let` variables
 - [ ] local `const` variables with compile-time evaluation
 - [ ] `return` with value
 - [ ] `loop`, `continue`, and `break` with optional label and value

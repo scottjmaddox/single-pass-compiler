@@ -1,3 +1,3 @@
-let main = fn() {
+const main = fn() {
     foo()
 }

@@ -1,6 +1,6 @@
 error: unexpected token: LEFT_BRACE
- --> tests/failure/11.spl:1:25
+ --> tests/failure/11.spl:1:27
   |
-  | let main = fn() -> unit {}
-  |                         ^
+  | const main = fn() -> unit {}
+  |                           ^
 Expected i32.

@@ -1,6 +1,6 @@
 error: reserved identifier
- --> tests/failure/7.spl:1:5
+ --> tests/failure/7.spl:1:7
   |
-  | let __builtin = fn() {}
-  |     ^^^^^^^^^
+  | const __builtin = fn() {}
+  |       ^^^^^^^^^
 Identifiers starting with '__builtin' are reserved.

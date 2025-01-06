@@ -1,1 +1,1 @@
-let main = fn() { 0 }
+const main = fn() { 0 }

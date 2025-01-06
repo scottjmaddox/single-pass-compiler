@@ -1,1 +1,1 @@
-let main = fn() -> unit {}
+const main = fn() -> unit {}

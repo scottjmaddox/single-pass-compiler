@@ -1,8 +1,8 @@
 error: type mismatch between unit:
- --> tests/failure/12.spl:1:16
+ --> tests/failure/12.spl:1:18
   |
-  | let main = fn() {
-  |                ^
+  | const main = fn() {
+  |                  ^
 and i32:
  --> tests/failure/12.spl:2:5
   |

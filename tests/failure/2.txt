@@ -3,4 +3,4 @@ error: unexpected token: INT_LITERAL
   |
   | 1
   | ^
-Expected a let statement.
+Expected: KEYWORD_CONST

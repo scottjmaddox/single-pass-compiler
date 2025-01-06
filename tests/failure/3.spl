@@ -1,1 +1,1 @@
-let main = fn() -> i32 { 0b2 }
+const main = fn() -> i32 { 0b2 }

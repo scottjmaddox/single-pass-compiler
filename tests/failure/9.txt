@@ -1,10 +1,10 @@
 error: type mismatch between unit:
- --> tests/failure/9.spl:1:16
+ --> tests/failure/9.spl:1:18
   |
-  | let main = fn() { 0 }
-  |                ^
+  | const main = fn() { 0 }
+  |                  ^
 and i32:
- --> tests/failure/9.spl:1:19
+ --> tests/failure/9.spl:1:21
   |
-  | let main = fn() { 0 }
-  |                   ^
+  | const main = fn() { 0 }
+  |                     ^

@@ -46,6 +46,7 @@ enum TOKEN {
     TOKEN_KEYWORD_FN,
     TOKEN_KEYWORD_LET,
     TOKEN_KEYWORD_ELSE,
+    TOKEN_KEYWORD_CONST,
     TOKEN_IDENT,
     TOKEN_INT_LITERAL,
     TOKEN_RESERVED,
@@ -84,6 +85,7 @@ static char *TOKEN_NAMES[] = {
     "KEYWORD_FN",
     "KEYWORD_LET",
     "KEYWORD_ELSE",
+    "KEYWORD_CONST",
     "IDENT",
     "INT_LITERAL",
     "RESERVED",
@@ -191,6 +193,7 @@ static struct str IF_STR = {.len = sizeof "if" - 1, .ptr = "if"};
 static struct str FN_STR = {.len = sizeof "fn" - 1, .ptr = "fn"};
 static struct str LET_STR = {.len = sizeof "let" - 1, .ptr = "let"};
 static struct str ELSE_STR = {.len = sizeof "else" - 1, .ptr = "else"};
+static struct str CONST_STR = {.len = sizeof "const" - 1, .ptr = "const"};
 static struct str I32_STR = {.len = sizeof "i32" - 1, .ptr = "i32"};
 static struct str BUILTIN_STR = {.len = sizeof "__builtin" - 1, .ptr = "__builtin"};
 static struct str BUILTIN_TRAP_STR = {.len = sizeof "__builtin_trap" - 1, .ptr = "__builtin_trap"};
@@ -468,6 +471,9 @@ lex(struct context *ctx) {
                 break;
             case 4:
                 if (str_equals(token_str(ctx, tok), ELSE_STR)) { tok.kind = TOKEN_KEYWORD_ELSE; return tok; }
+                break;
+            case 5:
+                if (str_equals(token_str(ctx, tok), CONST_STR)) { tok.kind = TOKEN_KEYWORD_CONST; return tok; }
                 break;
             }
             tok.kind = TOKEN_IDENT;
@@ -927,8 +933,8 @@ emit_builtin_trap(struct context *ctx) {
 ///////////////////////
 
 static void compile_program(struct context *ctx);
-static void compile_static_stmnt(struct context *ctx);
-static void compile_static_let_stmnt(struct context *ctx);
+static void compile_const_def(struct context *ctx);
+static void compile_const_def(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static struct type compile_block(struct context *ctx);
 static struct type compile_expr(struct context *ctx, int min_binding_power);
@@ -939,27 +945,18 @@ static struct type compile_int_literal(struct context *ctx, bool negate);
 
 static void
 compile_program(struct context *ctx) {
-    // EBNF: program = { static_stmnt } ;
+    // EBNF: program = { const_def } ;
     emit_program_prologue(ctx);
     while (peek_token_kind(ctx) != TOKEN_EOF) {
-        compile_static_stmnt(ctx);
+        compile_const_def(ctx);
     }
     emit_program_epilogue(ctx);
 }
 
 static void
-compile_static_stmnt(struct context *ctx) {
-    // EBNF: static_stmnt = static_let_stmnt ;
-    switch (peek_token_kind(ctx)) {
-    case TOKEN_KEYWORD_LET: compile_static_let_stmnt(ctx); break;
-    default: fail_expected(ctx, "a let statement");
-    }
-}
-
-static void
-compile_static_let_stmnt(struct context *ctx) {
-    // EBNF: static_let_stmnt = "let" ident "=" fn_def ;
-    take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
+compile_const_def(struct context *ctx) {
+    // EBNF: const_def = "const" ident "=" fn_def ;
+    take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_CONST);
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     if (str_starts_with(token_str(ctx, name_tok), BUILTIN_STR)) {

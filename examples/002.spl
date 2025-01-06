@@ -1,11 +1,11 @@
-let foo = fn() -> i32 {
+const foo = fn() -> i32 {
     42
 }
 
-let bar = fn() -> i32 {
+const bar = fn() -> i32 {
     foo()
 }
 
-let main = fn() -> i32 {
+const main = fn() -> i32 {
     bar()
 }

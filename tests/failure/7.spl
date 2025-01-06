@@ -1,1 +1,1 @@
-let __builtin = fn() {}
+const __builtin = fn() {}
