@@ -187,6 +187,10 @@ struct str {
     char *ptr;
 };
 
+static struct str IF_STR = {.len = sizeof "if" - 1, .ptr = "if"};
+static struct str FN_STR = {.len = sizeof "fn" - 1, .ptr = "fn"};
+static struct str LET_STR = {.len = sizeof "let" - 1, .ptr = "let"};
+static struct str ELSE_STR = {.len = sizeof "else" - 1, .ptr = "else"};
 static struct str I32_STR = {.len = sizeof "i32" - 1, .ptr = "i32"};
 static struct str BUILTIN_STR = {.len = sizeof "__builtin" - 1, .ptr = "__builtin"};
 static struct str BUILTIN_TRAP_STR = {.len = sizeof "__builtin_trap" - 1, .ptr = "__builtin_trap"};
@@ -307,13 +311,17 @@ alloc_symbol_node(struct context *ctx) {
 }
 
 static bool
-str_starts_with(struct str str, struct str prefix) {
-    return str.len >= prefix.len && strncmp(str.ptr, prefix.ptr, prefix.len) == 0;
+str_equals(struct str a, struct str b) {
+    if (a.len != b.len) { return false; }
+    for (size_t i = 0; i < a.len; i++) {
+        if (a.ptr[i] != b.ptr[i]) { return false; }
+    }
+    return true;
 }
 
 static bool
-str_equals(struct str a, struct str b) {
-    return a.len == b.len && strncmp(a.ptr, b.ptr, a.len) == 0;
+str_starts_with(struct str str, struct str prefix) {
+    return str.len >= prefix.len && str_equals((struct str){ .len = prefix.len, .ptr = str.ptr }, prefix);
 }
 
 static struct str
@@ -452,14 +460,14 @@ lex(struct context *ctx) {
             tok.len = i - tok.loc.idx;
             switch (tok.len) {
             case 2:
-                if (strncmp(src + tok.loc.idx, "if", 2) == 0) { tok.kind = TOKEN_KEYWORD_IF; return tok; }
-                if (strncmp(src + tok.loc.idx, "fn", 2) == 0) { tok.kind = TOKEN_KEYWORD_FN; return tok; }
+                if (str_equals(token_str(ctx, tok), IF_STR)) { tok.kind = TOKEN_KEYWORD_IF; return tok; }
+                if (str_equals(token_str(ctx, tok), FN_STR)) { tok.kind = TOKEN_KEYWORD_FN; return tok; }
                 break;
             case 3:
-                if (strncmp(src + tok.loc.idx, "let", 3) == 0) { tok.kind = TOKEN_KEYWORD_LET; return tok; }
+                if (str_equals(token_str(ctx, tok), LET_STR)) { tok.kind = TOKEN_KEYWORD_LET; return tok; }
                 break;
             case 4:
-                if (strncmp(src + tok.loc.idx, "else", 4) == 0) { tok.kind = TOKEN_KEYWORD_ELSE; return tok; }
+                if (str_equals(token_str(ctx, tok), ELSE_STR)) { tok.kind = TOKEN_KEYWORD_ELSE; return tok; }
                 break;
             }
             tok.kind = TOKEN_IDENT;
