@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <fcntl.h>         // For open()
-#include <sys/mman.h>      // For mmap(), munmap()
+#include <sys/mman.h>      // For mmap()
 #include <sys/stat.h>      // For fstat()
 #include <sys/syslimits.h> // For PATH_MAX
 #include <unistd.h>        // For getopt(), close()
@@ -12,7 +12,7 @@
 #include <limits.h>        // For ULLONG_MAX, LLONG_MAX
 
 #define MAX_TOKEN_LOOKAHEAD 2
-#define MAX_INT_LITERAL_LEN 64
+#define HEAP_COMMIT_SIZE (1024 * 1024) // 1 MiB
 
 enum TOKEN {
     TOKEN_EOF,
@@ -168,6 +168,7 @@ static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
 
 enum TYPE {
     TYPE_UNIT,
+    TYPE_FN,
     TYPE_I32,
 };
 
@@ -177,6 +178,7 @@ static bool TYPE_SIGNED[] = {
 
 static char *TYPE_NAMES[] = {
     "unit",
+    "fn",
     "i32",
 };
 
@@ -184,6 +186,10 @@ struct str {
     size_t len;
     char *ptr;
 };
+
+static struct str I32_STR = {.len = sizeof "i32" - 1, .ptr = "i32"};
+static struct str BUILTIN_STR = {.len = sizeof "__builtin" - 1, .ptr = "__builtin"};
+static struct str BUILTIN_TRAP_STR = {.len = sizeof "__builtin_trap" - 1, .ptr = "__builtin_trap"};
 
 struct location {
     size_t idx;
@@ -205,6 +211,24 @@ struct span {
 struct type {
     enum TYPE kind;
     struct span span;
+    // arg_list stores type constructor arguments.
+    // For TYPE_FN, that's the parameter types followed by the return type.
+    struct type_node *arg_list;
+};
+
+struct type_node {
+    struct type_node *next;
+    struct type type;
+};
+
+struct symbol {
+    struct token ident_tok;
+    struct type type;
+};
+
+struct symbol_node {
+    struct symbol_node *next;
+    struct symbol sym;
 };
 
 struct context {
@@ -217,9 +241,95 @@ struct context {
     size_t token_offset;
     size_t token_count;
     struct token tokens[MAX_TOKEN_LOOKAHEAD];
+    // Heap state
+    uintptr_t heap;
+    uintptr_t heap_end;
+    size_t commited_heap_size;
+    size_t max_heap_size;
+    struct type_node *free_type_nodes;
+    struct symbol_node *free_symbol_nodes;
     // Compiler state
     size_t local_label_count;
+    struct symbol_node *symbol_list;
 };
+
+///////////
+// Utils //
+///////////
+
+static void*
+alloc(struct context *ctx, size_t size, size_t align) {
+    // NOTE: assume align is a non-zero, positive power of 2
+    uintptr_t ptr = (ctx->heap_end + align - 1) & ~(align - 1);
+    ctx->heap_end = ptr + size;
+    size_t new_heap_size = ctx->heap_end - ctx->heap;
+    if (new_heap_size > ctx->commited_heap_size) {
+        if (new_heap_size > ctx->max_heap_size) {
+            fprintf(stderr, "error: heap size limit exceeded\n");
+            exit(EXIT_FAILURE);
+        }
+        // NOTE: assume HEAP_COMMIT_SIZE is a non-zero, positive power of 2
+        size_t new_commited_heap_size = (new_heap_size + HEAP_COMMIT_SIZE - 1) & ~(HEAP_COMMIT_SIZE - 1);
+        size_t commit_size = new_commited_heap_size - ctx->commited_heap_size;
+        void *result = mmap((void *)(ctx->heap + ctx->commited_heap_size), commit_size,
+                            PROT_READ | PROT_WRITE, MAP_ANON | MAP_FIXED | MAP_PRIVATE, -1, 0);
+        if (result == MAP_FAILED) {
+            fprintf(stderr, "internal compiler error while expanding the heap: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        ctx->commited_heap_size = new_commited_heap_size;
+    }
+    return (void*)ptr;
+}
+
+static struct type_node*
+alloc_type_node(struct context *ctx) {
+    struct type_node *node;
+    if (ctx->free_type_nodes == NULL) {
+        node = alloc(ctx, sizeof(struct type_node), __alignof__(struct type_node));
+    } else {
+        node = ctx->free_type_nodes;
+        ctx->free_type_nodes = node->next;
+    }
+    return node;
+}
+
+static struct symbol_node*
+alloc_symbol_node(struct context *ctx) {
+    struct symbol_node *node;
+    if (ctx->free_symbol_nodes == NULL) {
+        node = alloc(ctx, sizeof(struct symbol_node), __alignof__(struct symbol_node));
+    } else {
+        node = ctx->free_symbol_nodes;
+        ctx->free_symbol_nodes = node->next;
+    }
+    return node;
+}
+
+static bool
+str_starts_with(struct str str, struct str prefix) {
+    return str.len >= prefix.len && strncmp(str.ptr, prefix.ptr, prefix.len) == 0;
+}
+
+static bool
+str_equals(struct str a, struct str b) {
+    return a.len == b.len && strncmp(a.ptr, b.ptr, a.len) == 0;
+}
+
+static struct str
+token_str(struct context *ctx, struct token tok) {
+    return (struct str){ .len = tok.len, .ptr = ctx->src + tok.loc.idx };
+}
+
+static struct symbol_node*
+find_symbol_node(struct context *ctx, struct str ident) {
+    for(struct symbol_node *node = ctx->symbol_list; node != NULL; node = node->next) {
+        if (str_equals(token_str(ctx, node->sym.ident_tok), ident)) {
+            return node;
+        }
+    }
+    return NULL;
+}
 
 //////////////////////
 // Lexical analysis //
@@ -507,16 +617,6 @@ peek_token_span(struct context *ctx) {
 // Diagnostics and Utilities //
 ///////////////////////////////
 
-static bool
-token_starts_with(struct context *ctx, struct token tok, char *str) {
-    return tok.len >= strlen(str) && strncmp(ctx->src + tok.loc.idx, str, strlen(str)) == 0;
-}
-
-static bool
-token_equals(struct context *ctx, struct token tok, char *str) {
-    return tok.len == strlen(str) && strncmp(ctx->src + tok.loc.idx, str, strlen(str)) == 0;
-}
-
 static struct str
 get_span_line(struct context *ctx, struct span span) {
     size_t idx = 0;
@@ -536,6 +636,7 @@ get_span_line(struct context *ctx, struct span span) {
 
 static void
 eprint_span(struct context *ctx, struct span span) {
+    // TODO: handle multi-line spans
     assert(span.start.line == span.end.line);
     struct str token_line = get_span_line(ctx, span);
     fprintf(stderr,
@@ -588,6 +689,23 @@ static void
 fail_unknown_builtin(struct context *ctx, struct token tok) {
     fprintf(stderr, "error: unknown builtin function\n");
     eprint_span(ctx, token_span(ctx, tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_undefined_fn(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: undefined function\n");
+    eprint_span(ctx, token_span(ctx, tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_fn_call_non_fn(struct context *ctx, struct token fn_call_tok, struct type ident_type) {
+    fprintf(stderr, "error: function call to non-function:\n");
+    eprint_span(ctx, token_span(ctx, fn_call_tok));
+    fprintf(stderr, "%.*s has type %s and is defined here:\n",
+        (int)fn_call_tok.len, ctx->src + fn_call_tok.loc.idx, TYPE_NAMES[ident_type.kind]);
+    eprint_span(ctx, ident_type.span);
     exit(EXIT_FAILURE);
 }
 
@@ -679,7 +797,10 @@ static void
 emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
     switch (return_type) {
     case TYPE_UNIT:
-        emit_clear_reg(ctx, "w0");
+        emit_clear_reg(ctx, "x0");
+        break;
+    case TYPE_FN:
+        emit_pop(ctx, "x0");
         break;
     case TYPE_I32:
         emit_pop(ctx, "w0");
@@ -735,7 +856,6 @@ emit_unary_op(struct context *ctx, enum UNARY_OP op) {
     case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tw0, w0\n"); break;
     case UNARY_OP_BITWISE_NOT: fprintf(ctx->output_file, "\tmvn\tw0, w0\n"); break;
     case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tw0, #0\n\tcset\tw0, eq\n" ); break;
-    default: assert(!"unreachable");
     }
     emit_push(ctx, "w0");
 }
@@ -775,7 +895,9 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, enum TYPE left_type, enum
     case BINARY_OP_BITWISE_AND: fprintf(ctx->output_file, "\tand\tw0, w0, w1\n");; break;
     case BINARY_OP_BITWISE_XOR: fprintf(ctx->output_file, "\teor\tw0, w0, w1\n");; break;
     case BINARY_OP_BITWISE_OR: fprintf(ctx->output_file, "\torr\tw0, w0, w1\n");; break;
-    default: assert(!"unreachable");
+    case BINARY_OP_LOGICAL_AND:
+    case BINARY_OP_LOGICAL_OR:
+        assert(!"unreachable");
     }
     emit_push(ctx, "w0");
 }
@@ -832,7 +954,7 @@ compile_static_let_stmnt(struct context *ctx) {
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
-    if (token_starts_with(ctx, name_tok, "__builtin")) {
+    if (str_starts_with(token_str(ctx, name_tok), BUILTIN_STR)) {
         fail_reserved_ident(ctx, name_tok);
     }
     take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
@@ -844,34 +966,48 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // EBNF:
     // fn_def = "fn" "(" ")" "->" type_expr block ;
     // type_expr = ident ;
-    take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_FN);
+    struct token fn_tok;
+    struct token params_end_tok;
+    struct type declared_return_type;
+    take_token_expect_kind(ctx, &fn_tok, TOKEN_KEYWORD_FN);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
-    struct token right_paren_tok;
-    take_token_expect_kind(ctx, &right_paren_tok, TOKEN_RIGHT_PAREN);
-    struct type declared_type;
+    // TODO: create type and symbol list for parameters
+    take_token_expect_kind(ctx, &params_end_tok, TOKEN_RIGHT_PAREN);
     if (peek_token_kind(ctx) == TOKEN_RIGHT_ARROW) {
         struct token right_arrow_tok;
         take_token_expect_kind(ctx, &right_arrow_tok, TOKEN_RIGHT_ARROW);
         struct token type_tok;
         take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
-        if (!token_equals(ctx, type_tok, "i32")) {
-            // TODO: support other types
-            fail_expected(ctx, "i32");
+        if (!str_equals(token_str(ctx, type_tok), I32_STR)) {
+            // TODO: support other return types
+            fail_expected(ctx, "i32"); // TODO: improve error message and loc
         }
-        declared_type.kind = TYPE_I32;
-        declared_type.span = token_span(ctx, type_tok);
+        declared_return_type.kind = TYPE_I32;
+        declared_return_type.span = token_span(ctx, type_tok);
     } else {
-        declared_type.kind = TYPE_UNIT;
-        declared_type.span.start = token_end(ctx, right_paren_tok);
-        declared_type.span.end = peek_token_loc(ctx);
+        declared_return_type.kind = TYPE_UNIT;
+        declared_return_type.span.start = token_end(ctx, params_end_tok);
+        declared_return_type.span.end = peek_token_loc(ctx);
     }
+
+    struct span fn_type_span = (struct span){ .start = fn_tok.loc, .end = declared_return_type.span.end };
+    struct type_node *fn_arg_list = alloc_type_node(ctx);
+    *fn_arg_list = (struct type_node){ .next = NULL, .type = declared_return_type};
+    struct type fn_type = { .kind = TYPE_FN, .span = fn_type_span, .arg_list = fn_arg_list };
+    struct symbol fn_sym = { .ident_tok = *name_tok, .type = fn_type };
+    // TODO: check for an existing definition or a conflicting forward declaration
+    struct symbol_node *fn_sym_node = alloc_symbol_node(ctx);
+    *fn_sym_node = (struct symbol_node){ .next = ctx->symbol_list, .sym = fn_sym };
+    ctx->symbol_list = fn_sym_node;
+    // TODO: push parameter symbol list
     ctx->local_label_count = 0;
     emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
-    struct type return_type = compile_block(ctx);
-    if (return_type.kind != declared_type.kind) {
-        fail_type_mismatch(ctx, declared_type, return_type);
+    struct type block_return_type = compile_block(ctx);
+    if (block_return_type.kind != declared_return_type.kind) {
+        fail_type_mismatch(ctx, declared_return_type, block_return_type);
     }
-    emit_fn_epilogue(ctx, return_type.kind);
+    emit_fn_epilogue(ctx, block_return_type.kind);
+    // TODO: pop and free parameter symbol list
 }
 
 static struct type
@@ -1090,21 +1226,29 @@ compile_fn_call(struct context *ctx) {
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
+    // TODO: collect arguments
     struct token right_paren_tok;
     take_token_expect_kind(ctx, &right_paren_tok, TOKEN_RIGHT_PAREN);
     struct span fn_call_span = { .start = name_tok.loc, .end = token_end(ctx, right_paren_tok) };
-    if (token_starts_with(ctx, name_tok, "__builtin")) {
-        if (token_equals(ctx, name_tok, "__builtin_trap")) {
+    struct str name_str = token_str(ctx, name_tok);
+    if (str_starts_with(name_str, BUILTIN_STR)) {
+        if (str_equals(name_str, BUILTIN_TRAP_STR)) {
             emit_builtin_trap(ctx);
-            return (struct type){
-                .kind = TYPE_UNIT, // TODO: never type
-                .span = fn_call_span};
+            // TODO: return TYPE_NEVER
+            return (struct type){ .kind = TYPE_UNIT, .span = fn_call_span};
         }
         fail_unknown_builtin(ctx, name_tok);
     }
-    // TODO: lookup return type in symbol table
-    struct type return_type = { .kind = TYPE_I32, .span = fn_call_span };
+    struct symbol_node *fn_sym_node = find_symbol_node(ctx, name_str);
+    if (fn_sym_node == NULL) { fail_undefined_fn(ctx, name_tok); }
+    struct type fn_type = fn_sym_node->sym.type;
+    if (fn_type.kind != TYPE_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_type); } // TODO: test this
+    // TODO: check argument types against parameter types
+    struct type_node *return_type_node = fn_type.arg_list;
+    for (; return_type_node->next != NULL; return_type_node = return_type_node->next) {}
+    struct type return_type = return_type_node->type;
     emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, return_type.kind);
+    return_type.span = fn_call_span;
     return return_type;
 }
 
@@ -1242,14 +1386,33 @@ main(int argc, char *argv[]) {
     int opt;
     char output_file_path_buf[PATH_MAX + 1];
     char *output_file_path = NULL;
-    while ((opt = getopt(argc, argv, "o:")) != -1) {
+    size_t max_heap_size = 1024 * 1024 * 1024; // 1 GiB
+    while ((opt = getopt(argc, argv, "o:m:")) != -1) {
         switch(opt) {
             case 'o':
                 output_file_path = optarg;
                 break;
+            case 'm':
+                max_heap_size = 0;
+                for (size_t i = 0; optarg[i] != '\0'; i++) {
+                    if (optarg[i] < '0' || optarg[i] > '9') {
+                        fprintf(stderr, "error: invalid number: %s\n", optarg);
+                        return EXIT_FAILURE;
+                    }
+                    if (__builtin_mul_overflow(max_heap_size, 10, &max_heap_size)) {
+                        fprintf(stderr, "error: number out of range: %s\n", optarg);
+                        return EXIT_FAILURE;
+                    }
+                    char digit = optarg[i] - '0';
+                    if (__builtin_add_overflow(max_heap_size, digit, &max_heap_size)) {
+                        fprintf(stderr, "error: number out of range: %s\n", optarg);
+                        return EXIT_FAILURE;
+                    }
+                }
+                break;
             case '?':
                 // getopt already prints an error message for unknown options
-                fprintf(stderr, "Usage: %s [-o OUT_FILE] FILE\n", argv[0]);
+                fprintf(stderr, "Usage: %s [-o OUT_FILE] [-m MAX_HEAP_SIZE] FILE\n", argv[0]);
                 return EXIT_FAILURE;
             default:
                 assert(!"unreachable");
@@ -1282,37 +1445,58 @@ main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     size_t input_file_size = sb.st_size;
-    void *mapped_input_file = NULL;
-    if (input_file_size != 0) {
-        // Memory-map the input file
-        mapped_input_file = mmap(NULL, input_file_size, PROT_READ, MAP_PRIVATE, input_fd, 0);
-        if (mapped_input_file == MAP_FAILED) {
-            fprintf(stderr, "internal compiler error while mapping file '%s': %s\n", input_file_path, strerror(errno));
-            if (close(input_fd) == -1) { fprintf(stderr, "internal compiler warning while closing file '%s': %s\n", input_file_path, strerror(errno)); }
-            return EXIT_FAILURE;
-        }
+    if (input_file_size == 0) {
+        fprintf(stderr, "error: empty input file '%s'\n", input_file_path);
+        return EXIT_FAILURE;
+    }
+    // Memory-map the input file
+    void *mapped_input_file = mmap(NULL, input_file_size, PROT_READ, MAP_PRIVATE, input_fd, 0);
+    if (mapped_input_file == MAP_FAILED) {
+        fprintf(stderr, "internal compiler error while mapping file '%s': %s\n", input_file_path, strerror(errno));
+        if (close(input_fd) == -1) { fprintf(stderr, "internal compiler warning while closing file '%s': %s\n", input_file_path, strerror(errno)); }
+        return EXIT_FAILURE;
     }
     if (close(input_fd) == -1) {
         fprintf(stderr, "internal compiler warning while closing file '%s': %s\n", input_file_path, strerror(errno));
         // Continue anyway
     }
-    if (mapped_input_file == NULL) {
-        fprintf(stderr, "error: empty input file '%s'\n", input_file_path);
-        return EXIT_FAILURE;
-    }
 
     // Prepare a temporary file for the output
-    // char tmp_output_file_path[] = "/tmp/spc-XXXXXX";
     tmp_output_fd = mkstemp(tmp_output_file_path);
     if (tmp_output_fd == -1) {
-        fprintf(stderr, "internal compiler error while creating temporary file: %s\n", strerror(errno));
+        fprintf(stderr, "internal compiler error while creating temporary output file: %s\n", strerror(errno));
         return EXIT_FAILURE;
     }
     atexit(cleanup_tmp_output);
     tmp_output_file = fdopen(tmp_output_fd, "w");
     if (tmp_output_file == NULL) {
-        fprintf(stderr, "internal compiler error while opening temporary file: %s\n", strerror(errno));
+        fprintf(stderr, "internal compiler error while opening temporary output file: %s\n", strerror(errno));
         return EXIT_FAILURE;
+    }
+
+    // Get the system's page size
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size == -1) {
+        perror("sysconf");
+        exit(EXIT_FAILURE);
+    }
+    // Align max_heap_size to page size
+    max_heap_size = (max_heap_size / page_size) * page_size;
+    if (max_heap_size == 0) {
+        fprintf(stderr, "error: max heap size must be larger than the page size: %ld\n", page_size);
+        return EXIT_FAILURE;
+    }
+    // Align max_heap_size to the commit size
+    max_heap_size = (max_heap_size / HEAP_COMMIT_SIZE) * HEAP_COMMIT_SIZE;
+    if (max_heap_size == 0) {
+        fprintf(stderr, "error: max heap size must be larger than the commit size: %d\n", HEAP_COMMIT_SIZE);
+        return EXIT_FAILURE;
+    }
+    // Reserve a memory block for the heap
+    void *heap = mmap(NULL, max_heap_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (heap == MAP_FAILED) {
+        fprintf(stderr, "internal compiler error while reserving memory: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
     }
 
     // Compile the program
@@ -1322,18 +1506,24 @@ main(int argc, char *argv[]) {
         .src = (char *)mapped_input_file,
         .src_len = input_file_size,
         .src_loc = { .idx = 0, .line = 1, .col = 1 },
+        .heap = (uintptr_t)heap,
+        .heap_end = (uintptr_t)heap,
+        .commited_heap_size = 0,
+        .max_heap_size = max_heap_size,
+        .symbol_list = NULL,
+        .free_symbol_nodes = NULL,
     };
     compile_program(&ctx);
 
     if (fclose(tmp_output_file) != 0) {
-        fprintf(stderr, "internal compiler error while closing temporary file: %s\n", strerror(errno));
+        fprintf(stderr, "internal compiler error while closing temporary output file: %s\n", strerror(errno));
         return EXIT_FAILURE;
     }
     tmp_output_file = NULL;
     tmp_output_fd = -1;
 
     if (rename(tmp_output_file_path, output_file_path) != 0) {
-        fprintf(stderr, "internal compiler error while moving temporary file to '%s': %s\n",
+        fprintf(stderr, "internal compiler error while moving temporary output file to '%s': %s\n",
                 output_file_path, strerror(errno));
         return EXIT_FAILURE;
     }

@@ -83,12 +83,13 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] write output to tmp file then move into place on success
 - [x] self-correcting file-driven build failure tests
 - [x] use spans to improve error messages
-- [ ] symbol table and optional function returns
+- [x] symbol table and optional function returns
 - [ ] never type
 - [ ] u1 type
 - [ ] rename current `let` to `const`
 - [ ] local `let` variables
 - [ ] local `const` variables with compile-time evaluation
+- [ ] `return` with value
 - [ ] `loop`, `continue`, and `break` with optional label and value
 - [ ] function parameters
 - [ ] arithmetic fuzz testing (comparing against C with `-ftrapv`)
