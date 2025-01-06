@@ -62,8 +62,7 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [Arm A-profile A64 Instruction Set Architecture](https://developer.arm.com/documentation/ddi0602/latest/?lang=en)
 - [Simple but Powerful Pratt Parsing](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html)
 - [Wikipedia: Operators in C and C++: Operator precedence](https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence)
-- [HelloSilicon](https://github.com/below/HelloSilicon)
-- [A Gentle Introduction to Assembly Language Programming](https://github.com/pkivolowitz/asm_book)
+- [Writing ARM64 code for Apple platforms](https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms)
 
 ## TODO
 
