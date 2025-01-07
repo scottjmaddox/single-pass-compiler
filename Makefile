@@ -82,7 +82,7 @@ test-success: $(TEST_SUCCESS_EXECUTABLES)
 	done
 
 tests/success/%-spl: tests/success/%-spl.s
-	clang -O0 -o $@ $<
+	clang -O0 --debug -o $@ $<
 
 tests/success/%-spl.s: tests/success/%.spl spc
 	./spc -o $@ $<

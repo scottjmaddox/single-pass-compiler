@@ -231,11 +231,17 @@ struct type_node {
 struct symbol {
     struct token ident_tok;
     struct type type;
+    int var_stack_offset;
 };
 
 struct symbol_node {
     struct symbol_node *next;
     struct symbol sym;
+};
+
+struct scope_node {
+    struct scope_node *next;
+    struct symbol_node *symbol_list;
 };
 
 struct context {
@@ -255,9 +261,11 @@ struct context {
     size_t max_heap_size;
     struct type_node *free_type_nodes;
     struct symbol_node *free_symbol_nodes;
+    struct scope_node *free_scope_nodes;
     // Compiler state
+    int stack_offset; // current stack offset from the frame pointer in x29
     size_t local_label_count;
-    struct symbol_node *symbol_list;
+    struct scope_node *scope_stack;
 };
 
 ///////////
@@ -298,6 +306,7 @@ alloc_type_node(struct context *ctx) {
         node = ctx->free_type_nodes;
         ctx->free_type_nodes = node->next;
     }
+    node->next = NULL;
     return node;
 }
 
@@ -310,7 +319,70 @@ alloc_symbol_node(struct context *ctx) {
         node = ctx->free_symbol_nodes;
         ctx->free_symbol_nodes = node->next;
     }
+    node->next = NULL;
     return node;
+}
+
+static struct scope_node*
+alloc_scope_node(struct context *ctx) {
+    struct scope_node *node;
+    if (ctx->free_scope_nodes == NULL) {
+        node = alloc(ctx, sizeof(struct scope_node), __alignof__(struct scope_node));
+    } else {
+        node = ctx->free_scope_nodes;
+        ctx->free_scope_nodes = node->next;
+    }
+    node->next = NULL;
+    return node;
+}
+
+static void
+free_type_node(struct context *ctx, struct type_node *node) {
+    node->next = ctx->free_type_nodes;
+    ctx->free_type_nodes = node;
+}
+
+static void
+free_symbol_node(struct context *ctx, struct symbol_node *node) {
+    node->next = ctx->free_symbol_nodes;
+    ctx->free_symbol_nodes = node;
+}
+
+static void
+free_scope_node(struct context *ctx, struct scope_node *node) {
+    node->next = ctx->free_scope_nodes;
+    ctx->free_scope_nodes = node;
+}
+
+static void
+push_symbol(struct context *ctx, struct symbol sym) {
+    struct symbol_node *node = alloc_symbol_node(ctx);
+    *node = (struct symbol_node){ .next = ctx->scope_stack->symbol_list, .sym = sym };
+    ctx->scope_stack->symbol_list = node;
+}
+
+static void
+push_scope(struct context *ctx) {
+    struct scope_node *node = alloc_scope_node(ctx);
+    *node = (struct scope_node){ .next = ctx->scope_stack, .symbol_list = NULL };
+    ctx->scope_stack = node;
+}
+
+static void
+pop_scope(struct context *ctx) {
+    struct scope_node *scope = ctx->scope_stack;
+    ctx->scope_stack = scope->next;
+    while (scope->symbol_list != NULL) {
+        struct symbol_node *node = scope->symbol_list;
+        scope->symbol_list = node->next;
+        while (node->sym.type.arg_list != NULL) {
+            struct type_node *arg = node->sym.type.arg_list;
+            node->sym.type.arg_list = arg->next;
+            free_type_node(ctx, arg);
+        }
+        free_symbol_node(ctx, node);
+    }
+    free_scope_node(ctx, scope);
 }
 
 static bool
@@ -334,9 +406,11 @@ token_str(struct context *ctx, struct token tok) {
 
 static struct symbol_node*
 find_symbol_node(struct context *ctx, struct str ident) {
-    for(struct symbol_node *node = ctx->symbol_list; node != NULL; node = node->next) {
-        if (str_equals(token_str(ctx, node->sym.ident_tok), ident)) {
-            return node;
+    for(struct scope_node *scope = ctx->scope_stack; scope != NULL; scope = scope->next) {
+        for(struct symbol_node *node = scope->symbol_list; node != NULL; node = node->next) {
+            if (str_equals(token_str(ctx, node->sym.ident_tok), ident)) {
+                return node;
+            }
         }
     }
     return NULL;
@@ -602,12 +676,12 @@ take_token(struct context *ctx, struct token* token) {
     ctx->token_count -= 1;
 }
 
-// static enum TOKEN
-// peek_token_kind_at(struct context *ctx, size_t i) {
-//     assert(i < MAX_TOKEN_LOOKAHEAD);
-//     if (i >= ctx->token_count) { fill_tokens(ctx); }
-//     return ctx->tokens[(ctx->token_offset + i) % MAX_TOKEN_LOOKAHEAD].kind;
-// }
+static enum TOKEN
+peek_token_kind_at(struct context *ctx, size_t i) {
+    assert(i < MAX_TOKEN_LOOKAHEAD);
+    if (i >= ctx->token_count) { fill_tokens(ctx); }
+    return ctx->tokens[(ctx->token_offset + i) % MAX_TOKEN_LOOKAHEAD].kind;
+}
 
 static enum TOKEN
 peek_token_kind(struct context *ctx) {
@@ -714,6 +788,13 @@ fail_undefined_fn(struct context *ctx, struct token tok) {
 }
 
 static void
+fail_undefined_var(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: undefined variable\n");
+    eprint_span(ctx, token_span(ctx, tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
 fail_fn_call_non_fn(struct context *ctx, struct token fn_call_tok, struct type ident_type) {
     fprintf(stderr, "error: function call to non-function:\n");
     eprint_span(ctx, token_span(ctx, fn_call_tok));
@@ -725,7 +806,7 @@ fail_fn_call_non_fn(struct context *ctx, struct token fn_call_tok, struct type i
 
 static void
 fail_expected_type(struct context *ctx, enum TYPE expected, struct type actual) {
-    fprintf(stderr, "error: expected type: %s\n", expected == TYPE_UNIT ? "unit" : "i32");
+    fprintf(stderr, "error: expected type %s, not %s\n", expected == TYPE_UNIT ? "unit" : "i32", TYPE_NAMES[actual.kind]);
     eprint_span(ctx, actual.span);
     exit(EXIT_FAILURE);
 }
@@ -776,15 +857,28 @@ emit_program_epilogue(struct context *ctx) {
 }
 
 static void
+emit_comment(struct context *ctx, char *comment) {
+    // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
+    fprintf(ctx->output_file, "\t; %s\n", comment);
+}
+
+static void
 emit_push(struct context *ctx, char *reg) {
     // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
-    fprintf(ctx->output_file, "\tstr\t%s, [sp, #-16]!\n", reg);
+    fprintf(ctx->output_file, "\tstr\t%s, [sp, #-16]!\t; push\n", reg);
 }
 
 static void
 emit_pop(struct context *ctx, char *reg) {
     // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
-    fprintf(ctx->output_file, "\tldr\t%s, [sp], #16\n", reg);
+    fprintf(ctx->output_file, "\tldr\t%s, [sp], #16\t; pop\n", reg);
+}
+
+static void
+emit_load_var(struct context *ctx, int var_stack_offset) {
+    emit_comment(ctx, "load var");
+    fprintf(ctx->output_file, "\tldr\tw0, [x29, #%d]\n", var_stack_offset);
+    emit_push(ctx, "w0");
 }
 
 static void
@@ -793,22 +887,25 @@ emit_clear_reg(struct context *ctx, char *reg) {
 }
 
 static void
-emit_fn_prologue(struct context *ctx, char *name, size_t name_len) {
+emit_fn_prologue(struct context *ctx, struct str name) {
+    emit_comment(ctx, "fn prologue");
     fprintf(ctx->output_file,
-        "\n"
         "\t.globl\t_%.*s\n"
         "\t.p2align\t2\n"
         "_%.*s:\n"
         "\t.cfi_startproc\n"
         "\tstp\tx29, x30, [sp, #-16]!\n"
+        "\tmov\tx29, sp"
         "\n",
-        (int)name_len, name,
-        (int)name_len, name
+        (int)name.len, name.ptr,
+        (int)name.len, name.ptr
     );
+    ctx->stack_offset = 0;
 }
 
 static void
 emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
+    emit_comment(ctx, "pop return value");
     switch (return_type) {
     case TYPE_UNIT:
         emit_clear_reg(ctx, "x0");
@@ -820,16 +917,19 @@ emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
         emit_pop(ctx, "w0");
         break;
     }
+    emit_comment(ctx, "fn epilogue");
     fprintf(ctx->output_file,
-        "\n"
+        "\tsub\tsp, sp, #%d\n"
         "\tldp\tx29, x30, [sp], #16\n"
         "\tret\n"
-        "\t.cfi_endproc\n"
+        "\t.cfi_endproc\n",
+        ctx->stack_offset
     );
 }
 
 static void
 emit_drop_type(struct context *ctx, enum TYPE ty) {
+    emit_comment(ctx, "drop type");
     if (ty != TYPE_UNIT) {
         emit_pop(ctx, "w0");
     }
@@ -837,6 +937,7 @@ emit_drop_type(struct context *ctx, enum TYPE ty) {
 
 static void
 emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TYPE return_type) {
+    emit_comment(ctx, "fn call");
     fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
     if (return_type != TYPE_UNIT) { emit_push(ctx, "w0"); }
 }
@@ -865,6 +966,7 @@ emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label) {
 
 static void
 emit_unary_op(struct context *ctx, enum UNARY_OP op) {
+    emit_comment(ctx, "unary op");
     emit_pop(ctx, "w0");
     switch (op) {
     case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tw0, w0\n"); break;
@@ -876,6 +978,7 @@ emit_unary_op(struct context *ctx, enum UNARY_OP op) {
 
 static void
 emit_binary_op(struct context *ctx, enum BINARY_OP op, enum TYPE left_type, enum TYPE right_type) {
+    emit_comment(ctx, "binary op");
     assert(left_type == TYPE_I32);
     assert(right_type == TYPE_I32);
     emit_pop(ctx, "w1");
@@ -919,6 +1022,7 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, enum TYPE left_type, enum
 static void
 emit_int_literal(struct context *ctx, long long int value) {
     // push the literal onto the stack
+    emit_comment(ctx, "int literal");
     fprintf(ctx->output_file, "\tldr\tw0, =%lld\n", value);
     emit_push(ctx, "w0");
 }
@@ -936,7 +1040,7 @@ static void compile_program(struct context *ctx);
 static void compile_const_def(struct context *ctx);
 static void compile_const_def(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
-static struct type compile_block(struct context *ctx);
+static struct type compile_block(struct context *ctx, bool create_scope);
 static struct type compile_expr(struct context *ctx, int min_binding_power);
 static struct type compile_if_expr(struct context *ctx);
 static struct type compile_prefix_op_expr(struct context *ctx);
@@ -947,9 +1051,11 @@ static void
 compile_program(struct context *ctx) {
     // EBNF: program = { const_def } ;
     emit_program_prologue(ctx);
+    push_scope(ctx);
     while (peek_token_kind(ctx) != TOKEN_EOF) {
         compile_const_def(ctx);
     }
+    // NOTE: no need to pop_scope, since this is the top level
     emit_program_epilogue(ctx);
 }
 
@@ -1001,51 +1107,101 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     struct type fn_type = { .kind = TYPE_FN, .span = fn_type_span, .arg_list = fn_arg_list };
     struct symbol fn_sym = { .ident_tok = *name_tok, .type = fn_type };
     // TODO: check for an existing definition or a conflicting forward declaration
-    struct symbol_node *fn_sym_node = alloc_symbol_node(ctx);
-    *fn_sym_node = (struct symbol_node){ .next = ctx->symbol_list, .sym = fn_sym };
-    ctx->symbol_list = fn_sym_node;
-    // TODO: push parameter symbol list
+    push_symbol(ctx, fn_sym);
     ctx->local_label_count = 0;
-    emit_fn_prologue(ctx, ctx->src + name_tok->loc.idx, name_tok->len);
-    struct type block_return_type = compile_block(ctx);
+    push_scope(ctx);
+    // TODO: push parameter symbols
+    emit_fn_prologue(ctx, token_str(ctx, *name_tok));
+    struct type block_return_type = compile_block(ctx, false);
     if (block_return_type.kind != declared_return_type.kind) {
         fail_type_mismatch(ctx, declared_return_type, block_return_type);
     }
     emit_fn_epilogue(ctx, block_return_type.kind);
-    // TODO: pop and free parameter symbol list
+    pop_scope(ctx);
 }
 
 static struct type
-compile_block(struct context *ctx) {
-    // EBNF: block = "{" { expr } "}" ;
-    take_token_expect_kind(ctx, NULL, TOKEN_LEFT_BRACE);
-    struct type previous_return_type = { 0 };
-    struct type final_return_type  = { 0 };
-    while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
-        emit_drop_type(ctx, previous_return_type.kind);
-        struct type return_type = compile_expr(ctx, 0);
-        previous_return_type = final_return_type;
-        final_return_type = return_type;
+compile_let_expr(struct context *ctx) {
+    // EBNF: let_expr = "let" ident "=" expr ;
+    struct token let_tok;
+    take_token_expect_kind(ctx, &let_tok, TOKEN_KEYWORD_LET);
+    struct token name_tok;
+    take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
+    if (str_starts_with(token_str(ctx, name_tok), BUILTIN_STR)) {
+        fail_reserved_ident(ctx, name_tok);
     }
-    take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
+    // TODO: check for shadowed var in the same scope, and drop their value (and reuse the stack slot?)
+    take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
+    struct type expr_type = compile_expr(ctx, 0);
+    ctx->stack_offset -= 16;
+    struct symbol var_sym = { .ident_tok = name_tok, .type = expr_type, .var_stack_offset = ctx->stack_offset };
+    push_symbol(ctx, var_sym);
+    struct span let_span = (struct span){ .start = let_tok.loc, .end = expr_type.span.end };
+    struct type return_type = { .kind = TYPE_UNIT, .span =  let_span};
+    return return_type;
+}
+
+static struct type
+compile_var_expr(struct context *ctx) {
+    // EBNF: var_expr = ident ;
+    struct token name_tok;
+    take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
+    struct str name_str = token_str(ctx, name_tok);
+    struct symbol_node *sym_node = find_symbol_node(ctx, name_str);
+    if (sym_node == NULL) { fail_undefined_var(ctx, name_tok); }
+    emit_load_var(ctx, sym_node->sym.var_stack_offset);
+    // TODO: emit load instruction
+    return sym_node->sym.type;
+}
+
+static struct type
+compile_block(struct context *ctx, bool create_scope) {
+    // EBNF: block = "{" { expr } "}" ;
+    if (create_scope) { push_scope(ctx); }
+    struct token left_brace_tok;
+    take_token_expect_kind(ctx, &left_brace_tok, TOKEN_LEFT_BRACE);
+    struct type final_return_type  = { .kind = TYPE_UNIT };
+    if (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
+        struct type previous_return_type = compile_expr(ctx, 0);
+        final_return_type = previous_return_type;
+        while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
+            emit_drop_type(ctx, previous_return_type.kind);
+            struct type return_type = compile_expr(ctx, 0);
+            previous_return_type = final_return_type;
+            final_return_type = return_type;
+        }
+        take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
+    } else {
+        struct token right_brace_tok;
+        take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);
+        final_return_type.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
+    }
+    if (create_scope) { pop_scope(ctx); }
     return final_return_type;
 }
 
 static struct type
 compile_expr(struct context *ctx, int min_binding_power) {
-    // EBNF: expr = block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
+    // EBNF: expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
     struct type left_type, right_type;
     switch (peek_token_kind(ctx)) {
     case TOKEN_RIGHT_BRACE: return (struct type){ .kind = TYPE_UNIT, .span = peek_token_span(ctx) };
-    case TOKEN_LEFT_BRACE: left_type = compile_block(ctx); break;
+    case TOKEN_LEFT_BRACE: left_type = compile_block(ctx, true); break;
     case TOKEN_KEYWORD_IF: left_type = compile_if_expr(ctx); break;
+    case TOKEN_KEYWORD_LET: left_type = compile_let_expr(ctx); break;
     case TOKEN_LEFT_PAREN:
         take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
         left_type = compile_expr(ctx, 0);
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
         break;
     case TOKEN_INT_LITERAL: left_type = compile_int_literal(ctx, false); break;
-    case TOKEN_IDENT: left_type = compile_fn_call(ctx); break;
+    case TOKEN_IDENT:
+        if (peek_token_kind_at(ctx, 1) == TOKEN_LEFT_PAREN) {
+            left_type = compile_fn_call(ctx);
+        } else {
+            left_type = compile_var_expr(ctx);
+        }
+        break;
     case TOKEN_MINUS:
     case TOKEN_TILDE:
     case TOKEN_EXCLAMATION:
@@ -1155,12 +1311,13 @@ compile_if_expr(struct context *ctx) {
     take_token_expect_kind(ctx, &if_tok, TOKEN_KEYWORD_IF);
     struct type condition_type = compile_expr(ctx, 0);
     if (condition_type.kind != TYPE_I32) {
+        // TODO: require bool; improve error message
         fail_expected_type(ctx, TYPE_I32, condition_type);
     }
     size_t false_label = ctx->local_label_count++;
     size_t done_label = ctx->local_label_count++;
     emit_local_forward_branch_if_zero(ctx, false_label);
-    struct type then_type = compile_block(ctx);
+    struct type then_type = compile_block(ctx, true);
     emit_local_forward_branch(ctx, done_label);
     emit_local_label(ctx, false_label);
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
@@ -1170,7 +1327,7 @@ compile_if_expr(struct context *ctx) {
         if (peek_token_kind(ctx) == TOKEN_KEYWORD_IF) {
             else_type = compile_if_expr(ctx);
         } else {
-            else_type = compile_block(ctx);
+            else_type = compile_block(ctx, true);
         }
         if (then_type.kind != else_type.kind) {
             fail_type_mismatch(ctx, then_type, else_type);
@@ -1515,7 +1672,7 @@ main(int argc, char *argv[]) {
         .heap_end = (uintptr_t)heap,
         .commited_heap_size = 0,
         .max_heap_size = max_heap_size,
-        .symbol_list = NULL,
+        .scope_stack = NULL,
         .free_symbol_nodes = NULL,
     };
     compile_program(&ctx);

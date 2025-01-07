@@ -20,9 +20,11 @@ const_def = "const" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
-expr = block | if_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | op_expr ;
+expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block_expr { "else" "if" expr block_expr } [ "else" block_expr ] ;
+let_expr = "let" ident "=" expr ;
 fn_call = ident "(" ")" ;
+var_expr = ident ;
 op_expr = prefix_op expr | expr infix_op expr ;
 
 ident = alpha { alphanumeric } ;
@@ -82,24 +84,32 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] self-correcting file-driven build failure tests
 - [x] use spans to improve error messages
 - [x] symbol table and optional function returns
-- [ ] local `let` variables
-- [ ] never type
-- [ ] u1 type
-- [ ] local `const` variables with compile-time evaluation
+- [x] local `let` variables
+- [ ] add more `let` and scope tests
+- [ ] `-g` / `--debug` option: emit debug directives, e.g. `.file` and `.loc`
+- [ ] function parameters
+- [ ] explicit tail calls?
 - [ ] `return` with value
 - [ ] `loop`, `continue`, and `break` with optional label and value
-- [ ] function parameters
-- [ ] arithmetic fuzz testing (comparing against C with `-ftrapv`)
+- [ ] nullable and non-nullable pointer types
+- [ ] function pointers and indirect calls
+- [ ] u8 type, integer literal suffixes, type promotion
 - [ ] struct types
+- [ ] never type
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
+- [ ] all iN and uN types a la llvm/zig?
+- [ ] reference types?
 - [ ] named return slots a la go? with uninitialized tracking
-- [ ] u8 type, integer literal suffixes, type promotion
+- [ ] local `const` variables with compile-time evaluation
+- [ ] arithmetic fuzz testing (comparing against C with `-ftrapv`)
 - [ ] explicit type conversion
 - [ ] byte character literals
-- [ ] reference types?
 - [ ] byte string literals
 - [ ] printing via printf?
-- [ ] optimization: push-pop annihilation
+- [ ] warn on unused variable?
+- [ ] compile-time optimization: defer line and col calculation until error?
+    - or store all line idx's in a separate persistent list?
+- [ ] compile-time optimization: intern idents? benchmark before and after
+- [ ] run-time optimization: push-pop annihilation
 - [ ] output to stdout on `-o -`
-- [ ] `-g` / `--debug` option
