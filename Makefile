@@ -20,7 +20,7 @@ TEST_SUCCESS_EXECUTABLES := $(TEST_SUCCESS_SPL_ASM_FILES:.s=)
 all: spc examples test
 
 clean:
-	git clean -dfX
+	git clean -dfX --exclude="!/.vscode"
 
 spc: spc.c
 	clang --debug -std=c99 -pedantic -Wall -Wno-gnu-case-range -o $@ $<
