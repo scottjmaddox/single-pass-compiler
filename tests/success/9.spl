@@ -1,0 +1,182 @@
+// ----------------------------------------------------
+// Complex Compiler Test Program
+// ----------------------------------------------------
+// This program verifies multiple facets of the language
+// grammar and semantics. If something fails, we call
+// __builtin_trap() to terminate with non-zero exit code.
+
+// 1) This function checks various prefix operators and
+//    numeric forms. It returns 1 if all checks pass.
+const test_prefix_ops = fn() -> i32 {
+    // a = !1 => should be 0
+    let a = !1
+
+    // b = ~0 => in typical 32-bit, ~0 == -1
+    let b = ~0
+
+    // c = -0x7F => negative hex literal (decimal -127)
+    let c = -0x7F
+
+    // d = -0b1010 => negative binary literal (-10 decimal)
+    let d = -0b1010
+
+    // e = -0o377 => negative octal literal (-255 decimal)
+    let e = -0o377
+
+    // Big nested if verifying each variable:
+    if a == 0 {
+        if b == -1 {
+            if c == -127 {
+                if d == -10 {
+                    if e == -255 {
+                        1  // all good
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
+// 2) This function checks various infix operators.
+//    It also uses nested blocks and multiple let-bindings
+//    to test shadowing. It returns 1 if correct.
+const test_infix_ops = fn() -> i32 {
+    // x = ((8 + 2) * 3) % 5 = (10 * 3) % 5 = 30 % 5 = 0
+    let x = (8 + 2) * 3 % 5
+
+    // y = (0b1001 << 1) => (9 << 1) => 18
+    let y = 0b1001 << 1
+
+    // Now we shadow y in a nested block:
+    {
+        let y = y + 2  // local shadow: 18 + 2 = 20
+        // We won't return here; just demonstrating shadowing
+    }
+
+    // z = (y >> 1) => (18 >> 1) => 9
+    let z = y >> 1
+
+    // w = 0x100 - 0o20 => 256 - 16 => 240
+    let w = 0x100 - 0o20
+
+    // Evaluate final check:
+    // x == 0, z == 9, w == 240 => all must be true
+    if x == 0 && z == 9 && w == 240 {
+        1
+    } else {
+        0
+    }
+}
+
+// 3) This function tests deeply nested if/else if logic,
+//    negative decimal literals, and bitwise combos.
+const test_nested_ifs = fn() -> i32 {
+    // Start with some local variables:
+    let a = 42
+    let b = -42
+    let c = (a + b)  // should be 0
+    let d = 0xDEAD   // just a hex literal
+
+    if a > 0 {
+        // a is 42, so this branch is taken
+        if c == 0 {
+            // c is indeed 0 (42 + -42)
+            if d != 0xBEEF {
+                // d = 0xDEAD, which differs from 0xBEEF => true
+                if b < 0 {
+                    // b is -42 => true
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else if a == 0 {
+        // Not taken
+        2
+    } else {
+        // Not taken
+        3
+    }
+}
+
+// 4) This function demonstrates that shadowing can happen
+//    at multiple levels and calls `__builtin_trap()` if
+//    any internal check fails.
+const test_multi_shadow = fn() -> i32 {
+    let x = 10
+    let y = 20
+
+    if x + y == 30 {
+        {
+            // Shadow x and y in this inner block
+            let x = 100
+            let y = 200
+
+            // Another shadowed block
+            {
+                let x = x + 1   // x becomes 101
+                let y = y - 1   // y becomes 199
+
+                // Verify these shadowed versions:
+                // If these checks fail, we immediately trap.
+                if x != 101 { __builtin_trap() }
+                if y != 199 { __builtin_trap() }
+            }
+            if x != 100 { __builtin_trap() }
+            if y != 200 { __builtin_trap() }
+        }
+        if x != 10 { __builtin_trap() }
+        if y != 20 { __builtin_trap() }
+        // If we reach here, it means no trap was triggered
+        1
+    } else {
+        // The top-level x + y was not 30 => trap
+        __builtin_trap()
+        1 // TODO: remove this `1` when __builtin_trap returns the never type
+    }
+}
+
+// ----------------------------------------------------
+// MAIN - orchestrates all tests. If any test fails,
+//        it calls __builtin_trap().
+// ----------------------------------------------------
+const main = fn() -> i32 {
+    // 1) test_prefix_ops
+    if test_prefix_ops() != 1 {
+        __builtin_trap()
+    }
+
+    // 2) test_infix_ops
+    if test_infix_ops() != 1 {
+        __builtin_trap()
+    }
+
+    // 3) test_nested_ifs
+    if test_nested_ifs() != 1 {
+        __builtin_trap()
+    }
+
+    // 4) test_multi_shadow
+    if test_multi_shadow() != 1 {
+        __builtin_trap()
+    }
+
+    // If we arrive here, everything passed.
+    // The final expression = 0 => this is our "success" code.
+    0
+}

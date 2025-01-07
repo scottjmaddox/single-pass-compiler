@@ -1,0 +1,67 @@
+// Testing prefix operators, numeric literals, and nested conditionals.
+const test_prefix_ops = fn() -> i32 {
+    // !0 should typically be 1, ~0 should typically be -1 (in 32-bit),
+    // and -0 is just 0.
+    let a = !0
+    let b = ~0
+    let c = -0      // c should be 0
+    let d = -123    // negative decimal literal
+    let e = -0x123  // negative hexadecimal literal
+
+    // First nested `if` checks `a` and `b`.
+    if a == 1 && b == -1 {
+        // Second nested `if` checks that -123 + 123 == 0
+        // and that -0x123 + 0x123 == 0.
+        if (d + 123) == 0 && (e + 0x123) == 0 {
+            1
+        } else {
+            0
+        }
+    } else if a == 0 {
+        // If this branch is ever taken, something’s off with prefix "!".
+        2
+    } else {
+        // Fallback
+        0
+    }
+}
+
+// Testing various infix operators (multiplication, addition, modulo, shift).
+const test_infix_ops = fn() -> i32 {
+    // x = (20 + (3 * 2)) % 9
+    //   = (20 + 6) % 9
+    //   = 26 % 9
+    //   = 8
+    let x = (20 + 3 * 2) % 9
+
+    // y = x << 2
+    //   = 8 << 2
+    //   = 32
+    let y = x << 2
+
+    // Return 1 if y == 32, otherwise 0.
+    if y == 32 {
+        1
+    } else {
+        0
+    }
+}
+
+// The main function combines the tests above and uses a nested block to shadow a variable.
+const main = fn() -> i32 {
+    let prefix_result = test_prefix_ops()
+    let infix_result = test_infix_ops()
+
+    // Check that both tests passed (both returned 1).
+    let combined = if prefix_result == 1 && infix_result == 1 {
+        0
+    } else {
+        1
+    }
+
+    {
+        // Shadow the name `combined` in this inner block.
+        let combined = combined + 0  // no-op; just demonstrating shadowing
+        combined
+    }
+}

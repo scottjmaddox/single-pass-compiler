@@ -1079,7 +1079,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // type_expr = ident ;
     struct token fn_tok;
     struct token params_end_tok;
-    struct type declared_return_type;
+    struct type declared_return_type = { 0 };
     take_token_expect_kind(ctx, &fn_tok, TOKEN_KEYWORD_FN);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     // TODO: create type and symbol list for parameters
@@ -1136,8 +1136,8 @@ compile_let_expr(struct context *ctx) {
     ctx->stack_offset -= 16;
     struct symbol var_sym = { .ident_tok = name_tok, .type = expr_type, .var_stack_offset = ctx->stack_offset };
     push_symbol(ctx, var_sym);
-    struct span let_span = (struct span){ .start = let_tok.loc, .end = expr_type.span.end };
-    struct type return_type = { .kind = TYPE_UNIT, .span =  let_span};
+    struct span let_span = { .start = let_tok.loc, .end = expr_type.span.end };
+    struct type return_type = { .kind = TYPE_UNIT, .span = let_span };
     return return_type;
 }
 
@@ -1183,7 +1183,8 @@ compile_block(struct context *ctx, bool create_scope) {
 static struct type
 compile_expr(struct context *ctx, int min_binding_power) {
     // EBNF: expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
-    struct type left_type, right_type;
+    struct type left_type = { 0 };
+    struct type right_type = { 0 };
     switch (peek_token_kind(ctx)) {
     case TOKEN_RIGHT_BRACE: return (struct type){ .kind = TYPE_UNIT, .span = peek_token_span(ctx) };
     case TOKEN_LEFT_BRACE: left_type = compile_block(ctx, true); break;
@@ -1239,7 +1240,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
         }
         struct token op_tok;
         take_token(ctx, &op_tok);
-        struct type result_type;
+        struct type result_type = { 0 };
         switch (op) {
         case BINARY_OP_LOGICAL_OR: {
             if (left_type.kind != TYPE_I32) {
@@ -1323,7 +1324,7 @@ compile_if_expr(struct context *ctx) {
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
         struct token else_tok;
         take_token_expect_kind(ctx, &else_tok, TOKEN_KEYWORD_ELSE);
-        struct type else_type;
+        struct type else_type = { 0 };
         if (peek_token_kind(ctx) == TOKEN_KEYWORD_IF) {
             else_type = compile_if_expr(ctx);
         } else {
@@ -1344,7 +1345,7 @@ compile_if_expr(struct context *ctx) {
 static struct type
 compile_prefix_op_expr(struct context *ctx) {
     // EBNF: prefix_op = "!" | "-" ;
-    struct type return_type;
+    struct type return_type = { 0 };
     switch (peek_token_kind(ctx)) {
     case TOKEN_MINUS:
         take_token_expect_kind(ctx, NULL, TOKEN_MINUS);

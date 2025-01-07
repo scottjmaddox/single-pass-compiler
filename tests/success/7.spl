@@ -1,0 +1,53 @@
+// This program tests multiple language features.
+
+// A helper function that returns 10 if 0xFF == 255 (true), otherwise 20.
+const helper = fn() -> i32 {
+    // helper returns 10 if 0xFF is 255
+    let a = 0xFF
+    if a == 255 {
+        10
+    } else {
+        20
+    }
+}
+
+// The main function makes use of helper(), octal and binary literals,
+// nested blocks, arithmetic, and logical operators.
+const main = fn() -> i32 {
+    // x = 10 (returned by helper)
+    let x = helper()
+
+    // y = 0o123 = 83 in decimal
+    let y = 0o123
+
+    // z becomes the absolute difference between x and y if they are not equal
+    // or 0 if they are equal.
+    // Here, 10 is not greater than 83, and not equal to 83, so z = 83 - 10 = 73.
+    let z = if x > y {
+        x - y
+    } else if x == y {
+        0
+    } else {
+        y - x
+    }
+
+    // w = (73 + 5) * 2 - 0b10
+    //   = 78 * 2 - 2
+    //   = 156 - 2
+    //   = 154
+    let w = (z + 5) * 2 - 0b10
+
+    {
+        // Shadow the outer w with a locally redefined w:
+        // w >> 1 = 154 >> 1 = 77
+        let w = w >> 1
+
+        // Check both the shifted w and z.
+        // w should be 77, z should be 73. If both match, return 0; otherwise 1.
+        if w == 77 && z == 73 {
+            0
+        } else {
+            1
+        }
+    }
+}

@@ -21,7 +21,7 @@ fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
 expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
-if_expr = "if" expr block_expr { "else" "if" expr block_expr } [ "else" block_expr ] ;
+if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident "=" expr ;
 fn_call = ident "(" ")" ;
 var_expr = ident ;
@@ -85,7 +85,7 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] use spans to improve error messages
 - [x] symbol table and optional function returns
 - [x] local `let` variables
-- [ ] add more `let` and scope tests
+- [ ] never type
 - [ ] `-g` / `--debug` option: emit debug directives, e.g. `.file` and `.loc`
 - [ ] function parameters
 - [ ] explicit tail calls?
@@ -95,7 +95,6 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [ ] function pointers and indirect calls
 - [ ] u8 type, integer literal suffixes, type promotion
 - [ ] struct types
-- [ ] never type
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
 - [ ] all iN and uN types a la llvm/zig?
@@ -110,6 +109,8 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [ ] warn on unused variable?
 - [ ] compile-time optimization: defer line and col calculation until error?
     - or store all line idx's in a separate persistent list?
-- [ ] compile-time optimization: intern idents? benchmark before and after
+- [ ] compile-time optimization: intern idents?
+    - using a trie?
+    - benchmark before and after
 - [ ] run-time optimization: push-pop annihilation
 - [ ] output to stdout on `-o -`
