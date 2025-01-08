@@ -18,7 +18,7 @@ The currently supported grammar, in extended Backus–Naur form (EBNF):
 program = { const_def } ;
 const_def = "const" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
-type_expr = ident ;
+type_expr = "unit" | "never" | "i32" ;
 block = "{" { expr } "}" ;
 expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
@@ -85,22 +85,34 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] use spans to improve error messages
 - [x] symbol table and optional function returns
 - [x] local `let` variables
-- [ ] never type
+- [x] never type
 - [ ] `-g` / `--debug` option: emit debug directives, e.g. `.file` and `.loc`
+- [ ] basic vscode language support
 - [ ] function parameters
+- [ ] reserve builtin type idents
+- [ ] add line numbers to error messages
+- [ ] support multi-line span error messages
 - [ ] explicit tail calls?
 - [ ] `return` with value
 - [ ] `loop`, `continue`, and `break` with optional label and value
 - [ ] nullable and non-nullable pointer types
+- [ ] `match` expressions
 - [ ] function pointers and indirect calls
+- [ ] bool type; `if`, `&&`, `||` expect bool
 - [ ] u8 type, integer literal suffixes, type promotion
 - [ ] struct types
+- [ ] `let` pattern matching assignment; returns bool: true on match, false otherwise
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
 - [ ] all iN and uN types a la llvm/zig?
 - [ ] reference types?
 - [ ] named return slots a la go? with uninitialized tracking
-- [ ] local `const` variables with compile-time evaluation
+- [ ] local `const`
+- [ ] `const` def aliases
+- [ ] `const` def returns symbol to allow chained defs?
+- [ ] `const` def with compile-time evaluated arithmetic
+- [ ] `const if` for compile-time conditional definitions?
+- [ ] `const loop` for compile-time codegen?
 - [ ] arithmetic fuzz testing (comparing against C with `-ftrapv`)
 - [ ] explicit type conversion
 - [ ] byte character literals

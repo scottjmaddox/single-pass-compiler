@@ -1,5 +1,5 @@
 error: unexpected token: RESERVED
- --> tests/failure/4.spl:1:28
+ --> tests/failure/reserved_0o8.spl:1:28
   |
   | const main = fn() -> i32 { 0o8 }
   |                            ^^^

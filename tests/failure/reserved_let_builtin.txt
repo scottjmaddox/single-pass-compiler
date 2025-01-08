@@ -1,0 +1,6 @@
+error: reserved identifier
+ --> tests/failure/reserved_let_builtin.spl:2:9
+  |
+  |     let __builtin = 0
+  |         ^^^^^^^^^
+Identifiers starting with '__builtin' are reserved.

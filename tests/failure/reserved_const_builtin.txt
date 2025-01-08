@@ -1,5 +1,5 @@
 error: reserved identifier
- --> tests/failure/7.spl:1:7
+ --> tests/failure/reserved_const_builtin.spl:1:7
   |
   | const __builtin = fn() {}
   |       ^^^^^^^^^

@@ -1,6 +1,0 @@
-error: unexpected token: LEFT_BRACE
- --> tests/failure/11.spl:1:27
-  |
-  | const main = fn() -> unit {}
-  |                           ^
-Expected i32.

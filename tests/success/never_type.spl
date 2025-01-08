@@ -1,0 +1,58 @@
+// A function that always traps and never returns.
+const test_unreachable_function = fn() -> never {
+    __builtin_trap()
+}
+
+const test_if_expression = fn() -> i32 {
+    let cond = 1
+    // If cond == 1, return 123; otherwise, trap.
+    // The compiler should accept that the `else` branch is `never`,
+    // but the overall expression is i32.
+    if cond == 1 {
+        123
+    } else {
+        __builtin_trap()
+    }
+}
+
+const test_chained_if = fn() -> i32 {
+    let x = -1
+    if x == 0 {
+        0
+    } else if x < 0 {
+        // Negative values => return them directly
+        x
+    } else {
+        // For any other positive value, trap
+        __builtin_trap()
+    }
+}
+
+const test_inline_trap = fn() -> i32 {
+    // Some compilers might warn "unreachable code" below if you add more lines.
+    // But from the type system's perspective, returning `never` is acceptable
+    // where an i32 is expected, because it never returns.
+    __builtin_trap()
+}
+
+const nested_block_never = fn() -> i32 {
+    let cond = 1
+    // The outer block is an expression returning i32
+    {
+        if cond {
+            42
+        } else {
+            // This nested block is an expression returning never
+            {
+                __builtin_trap()
+            }
+        }
+    }
+}
+
+const main = fn() {
+    test_if_expression()
+    test_chained_if()
+    nested_block_never()
+    {}
+}

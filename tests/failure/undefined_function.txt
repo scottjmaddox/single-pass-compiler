@@ -1,5 +1,5 @@
 error: undefined function
- --> tests/failure/13.spl:2:5
+ --> tests/failure/undefined_function.spl:2:5
   |
   |     foo()
   |     ^^^

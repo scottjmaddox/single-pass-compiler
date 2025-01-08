@@ -170,6 +170,7 @@ static int BINARY_OP_RIGHT_BINDING_POWERS[] = {
 
 enum TYPE {
     TYPE_UNIT,
+    TYPE_NEVER,
     TYPE_FN,
     TYPE_I32,
 };
@@ -180,6 +181,7 @@ static bool TYPE_SIGNED[] = {
 
 static char *TYPE_NAMES[] = {
     "unit",
+    "never",
     "fn",
     "i32",
 };
@@ -194,7 +196,11 @@ static struct str FN_STR = {.len = sizeof "fn" - 1, .ptr = "fn"};
 static struct str LET_STR = {.len = sizeof "let" - 1, .ptr = "let"};
 static struct str ELSE_STR = {.len = sizeof "else" - 1, .ptr = "else"};
 static struct str CONST_STR = {.len = sizeof "const" - 1, .ptr = "const"};
+
+static struct str UNIT_STR = {.len = sizeof "unit" - 1, .ptr = "unit"};
+static struct str NEVER_STR = {.len = sizeof "never" - 1, .ptr = "never"};
 static struct str I32_STR = {.len = sizeof "i32" - 1, .ptr = "i32"};
+
 static struct str BUILTIN_STR = {.len = sizeof "__builtin" - 1, .ptr = "__builtin"};
 static struct str BUILTIN_TRAP_STR = {.len = sizeof "__builtin_trap" - 1, .ptr = "__builtin_trap"};
 
@@ -788,6 +794,13 @@ fail_undefined_fn(struct context *ctx, struct token tok) {
 }
 
 static void
+fail_undefined_type(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: undefined type\n");
+    eprint_span(ctx, token_span(ctx, tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
 fail_undefined_var(struct context *ctx, struct token tok) {
     fprintf(stderr, "error: undefined variable\n");
     eprint_span(ctx, token_span(ctx, tok));
@@ -806,7 +819,7 @@ fail_fn_call_non_fn(struct context *ctx, struct token fn_call_tok, struct type i
 
 static void
 fail_expected_type(struct context *ctx, enum TYPE expected, struct type actual) {
-    fprintf(stderr, "error: expected type %s, not %s\n", expected == TYPE_UNIT ? "unit" : "i32", TYPE_NAMES[actual.kind]);
+    fprintf(stderr, "error: expected type %s, not %s\n", TYPE_NAMES[expected], TYPE_NAMES[actual.kind]);
     eprint_span(ctx, actual.span);
     exit(EXIT_FAILURE);
 }
@@ -817,6 +830,23 @@ fail_type_mismatch(struct context *ctx, struct type expected, struct type actual
     eprint_span(ctx, expected.span);
     fprintf(stderr, "and %s:\n", TYPE_NAMES[actual.kind]);
     eprint_span(ctx, actual.span);
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_expected_subtype(struct context *ctx, struct type subtype, struct type supertype) {
+    fprintf(stderr, "error: expected type %s from:\n", TYPE_NAMES[subtype.kind]);
+    eprint_span(ctx, subtype.span);
+    fprintf(stderr, "to be a subtype of type %s from:\n", TYPE_NAMES[supertype.kind]);
+    eprint_span(ctx, supertype.span);
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_if_without_else_non_unit(struct context *ctx, struct type then_type) {
+    fprintf(stderr, "error: if without else has non-unit type: %s\n", TYPE_NAMES[then_type.kind]);
+    eprint_span(ctx, then_type.span);
+    fprintf(stderr, "Expected type unit or a matching else type.\n");
     exit(EXIT_FAILURE);
 }
 
@@ -908,14 +938,9 @@ emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
     emit_comment(ctx, "pop return value");
     switch (return_type) {
     case TYPE_UNIT:
-        emit_clear_reg(ctx, "x0");
-        break;
-    case TYPE_FN:
-        emit_pop(ctx, "x0");
-        break;
-    case TYPE_I32:
-        emit_pop(ctx, "w0");
-        break;
+    case TYPE_NEVER: emit_clear_reg(ctx, "x0"); break;
+    case TYPE_FN: emit_pop(ctx, "x0"); break;
+    case TYPE_I32: emit_pop(ctx, "w0"); break;
     }
     emit_comment(ctx, "fn epilogue");
     fprintf(ctx->output_file,
@@ -930,8 +955,11 @@ emit_fn_epilogue(struct context *ctx, enum TYPE return_type) {
 static void
 emit_drop_type(struct context *ctx, enum TYPE ty) {
     emit_comment(ctx, "drop type");
-    if (ty != TYPE_UNIT) {
-        emit_pop(ctx, "w0");
+    switch (ty) {
+        case TYPE_UNIT:
+        case TYPE_NEVER: break;
+        case TYPE_FN: emit_pop(ctx, "x0"); break;
+        case TYPE_I32: emit_pop(ctx, "w0"); break;
     }
 }
 
@@ -939,7 +967,12 @@ static void
 emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TYPE return_type) {
     emit_comment(ctx, "fn call");
     fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
-    if (return_type != TYPE_UNIT) { emit_push(ctx, "w0"); }
+    switch (return_type) {
+        case TYPE_UNIT:
+        case TYPE_NEVER: break;
+        case TYPE_FN: emit_push(ctx, "x0"); break;
+        case TYPE_I32: emit_push(ctx, "w0"); break;
+    }
 }
 
 static void
@@ -1036,6 +1069,19 @@ emit_builtin_trap(struct context *ctx) {
 // Compiler Frontend //
 ///////////////////////
 
+static void
+require_subtype(struct context *ctx, struct type subtype, struct type supertype) {
+    switch (subtype.kind) {
+    case TYPE_UNIT: if (supertype.kind == TYPE_UNIT) { return; } break;
+    case TYPE_NEVER: return; break;
+    case TYPE_FN: if (supertype.kind == TYPE_FN) {
+        assert(!"not implemented"); // TODO: implement
+    } break;
+    case TYPE_I32: if (supertype.kind == TYPE_I32) { return; } break;
+    }
+    fail_expected_subtype(ctx, subtype, supertype);
+}
+
 static void compile_program(struct context *ctx);
 static void compile_const_def(struct context *ctx);
 static void compile_const_def(struct context *ctx);
@@ -1089,11 +1135,18 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
         take_token_expect_kind(ctx, &right_arrow_tok, TOKEN_RIGHT_ARROW);
         struct token type_tok;
         take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
-        if (!str_equals(token_str(ctx, type_tok), I32_STR)) {
+        struct str type_str = token_str(ctx, type_tok);
+        // TODO: hoist this into a helper function / preregister type symbols and lookup
+        if (str_equals(type_str, UNIT_STR)) {
+            declared_return_type.kind = TYPE_UNIT;
+        } else if (str_equals(type_str, NEVER_STR)) {
+            declared_return_type.kind = TYPE_NEVER;
+        } else if (str_equals(type_str, I32_STR)) {
+            declared_return_type.kind = TYPE_I32;
+        } else {
             // TODO: support other return types
-            fail_expected(ctx, "i32"); // TODO: improve error message and loc
+            fail_undefined_type(ctx, type_tok);
         }
-        declared_return_type.kind = TYPE_I32;
         declared_return_type.span = token_span(ctx, type_tok);
     } else {
         declared_return_type.kind = TYPE_UNIT;
@@ -1113,9 +1166,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // TODO: push parameter symbols
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     struct type block_return_type = compile_block(ctx, false);
-    if (block_return_type.kind != declared_return_type.kind) {
-        fail_type_mismatch(ctx, declared_return_type, block_return_type);
-    }
+    require_subtype(ctx, block_return_type, declared_return_type);
     emit_fn_epilogue(ctx, block_return_type.kind);
     pop_scope(ctx);
 }
@@ -1168,7 +1219,13 @@ compile_block(struct context *ctx, bool create_scope) {
             emit_drop_type(ctx, previous_return_type.kind);
             struct type return_type = compile_expr(ctx, 0);
             previous_return_type = final_return_type;
-            final_return_type = return_type;
+            if (final_return_type.kind != TYPE_NEVER) {
+                final_return_type = return_type;
+            }
+            // TODO: on TYPE_NEVER, warn on dead code
+        }
+        if (final_return_type.kind == TYPE_NEVER) {
+                emit_drop_type(ctx, previous_return_type.kind);
         }
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
     } else {
@@ -1321,6 +1378,7 @@ compile_if_expr(struct context *ctx) {
     struct type then_type = compile_block(ctx, true);
     emit_local_forward_branch(ctx, done_label);
     emit_local_label(ctx, false_label);
+    struct type return_type = { 0 };
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
         struct token else_tok;
         take_token_expect_kind(ctx, &else_tok, TOKEN_KEYWORD_ELSE);
@@ -1330,16 +1388,24 @@ compile_if_expr(struct context *ctx) {
         } else {
             else_type = compile_block(ctx, true);
         }
-        if (then_type.kind != else_type.kind) {
+        if (then_type.kind != else_type.kind
+        && then_type.kind != TYPE_NEVER && else_type.kind != TYPE_NEVER) {
             fail_type_mismatch(ctx, then_type, else_type);
         }
+        struct span if_span = { .start = if_tok.loc, .end = else_type.span.end };
+        return_type = then_type;
+        return_type.span = if_span;
     } else {
-        if (then_type.kind != TYPE_UNIT) {
-            fail_expected_type(ctx, TYPE_UNIT, then_type);
+        switch (then_type.kind) {
+        case TYPE_UNIT:
+        case TYPE_NEVER: break;
+        default: fail_if_without_else_non_unit(ctx, then_type);
         }
+        struct span if_span = { .start = if_tok.loc, .end = then_type.span.end };
+        return_type = (struct type){ .kind = TYPE_UNIT, .span = if_span };
     }
     emit_local_label(ctx, done_label);
-    return then_type;
+    return return_type;
 }
 
 static struct type
@@ -1397,8 +1463,7 @@ compile_fn_call(struct context *ctx) {
     if (str_starts_with(name_str, BUILTIN_STR)) {
         if (str_equals(name_str, BUILTIN_TRAP_STR)) {
             emit_builtin_trap(ctx);
-            // TODO: return TYPE_NEVER
-            return (struct type){ .kind = TYPE_UNIT, .span = fn_call_span};
+            return (struct type){ .kind = TYPE_NEVER, .span = fn_call_span};
         }
         fail_unknown_builtin(ctx, name_tok);
     }

@@ -1,5 +1,5 @@
 error: integer literal out of range
- --> tests/failure/10.spl:1:21
+ --> tests/failure/int_literal_out_of_range.spl:1:21
   |
   | const main = fn() { 9999999999999999999999999999999999999999 }
   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

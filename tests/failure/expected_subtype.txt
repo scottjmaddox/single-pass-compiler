@@ -1,0 +1,10 @@
+error: expected type i32 from:
+ --> tests/failure/expected_subtype.spl:2:5
+  |
+  |     1
+  |     ^
+to be a subtype of type unit from:
+ --> tests/failure/expected_subtype.spl:1:18
+  |
+  | const main = fn() {
+  |                  ^

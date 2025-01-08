@@ -1,5 +1,5 @@
 error: unexpected token: INT_LITERAL
- --> tests/failure/2.spl:1:1
+ --> tests/failure/expected_const.spl:1:1
   |
   | 1
   | ^
