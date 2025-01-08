@@ -269,6 +269,8 @@ struct context {
     struct symbol_node *free_symbol_nodes;
     struct scope_node *free_scope_nodes;
     // Compiler state
+    bool emit_debug_info;
+    size_t debug_file_idx;
     int stack_offset; // current stack offset from the frame pointer in x29
     size_t local_label_count;
     struct scope_node *scope_stack;
@@ -876,6 +878,9 @@ take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN to
 
 static void
 emit_program_prologue(struct context *ctx) {
+    if (ctx->emit_debug_info) {
+        fprintf(ctx->output_file, "\t.file\t%zu \"%s\"\n", ctx->debug_file_idx, ctx->input_file_path);
+    }
     fprintf(ctx->output_file,
         "\t.section\t__TEXT,__text,regular,pure_instructions\n"
     );
@@ -917,8 +922,12 @@ emit_clear_reg(struct context *ctx, char *reg) {
 }
 
 static void
-emit_fn_prologue(struct context *ctx, struct str name) {
+emit_fn_prologue(struct context *ctx, struct token name_tok) {
+    struct str name = token_str(ctx, name_tok);
     emit_comment(ctx, "fn prologue");
+    if (ctx->emit_debug_info) {
+        fprintf(ctx->output_file, "\t.loc\t%zu %zu %zu\n", ctx->debug_file_idx, name_tok.loc.line, name_tok.loc.col);
+    }
     fprintf(ctx->output_file,
         "\t.globl\t_%.*s\n"
         "\t.p2align\t2\n"
@@ -1164,7 +1173,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     ctx->local_label_count = 0;
     push_scope(ctx);
     // TODO: push parameter symbols
-    emit_fn_prologue(ctx, token_str(ctx, *name_tok));
+    emit_fn_prologue(ctx, *name_tok);
     struct type block_return_type = compile_block(ctx, false);
     require_subtype(ctx, block_return_type, declared_return_type);
     emit_fn_epilogue(ctx, block_return_type.kind);
@@ -1615,7 +1624,8 @@ main(int argc, char *argv[]) {
     char output_file_path_buf[PATH_MAX + 1];
     char *output_file_path = NULL;
     size_t max_heap_size = 1024 * 1024 * 1024; // 1 GiB
-    while ((opt = getopt(argc, argv, "o:m:")) != -1) {
+    bool emit_debug_info = false;
+    while ((opt = getopt(argc, argv, "o:m:g")) != -1) {
         switch(opt) {
             case 'o':
                 output_file_path = optarg;
@@ -1637,6 +1647,9 @@ main(int argc, char *argv[]) {
                         return EXIT_FAILURE;
                     }
                 }
+                break;
+            case 'g':
+                emit_debug_info = true;
                 break;
             case '?':
                 // getopt already prints an error message for unknown options
@@ -1734,6 +1747,7 @@ main(int argc, char *argv[]) {
         .src = (char *)mapped_input_file,
         .src_len = input_file_size,
         .src_loc = { .idx = 0, .line = 1, .col = 1 },
+        .emit_debug_info = emit_debug_info,
         .heap = (uintptr_t)heap,
         .heap_end = (uintptr_t)heap,
         .commited_heap_size = 0,

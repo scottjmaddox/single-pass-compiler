@@ -38,7 +38,7 @@ examples/%-c.s: examples/%.c
 	clang -O0 -S -o $@ $<
 
 examples/%-spl.s: examples/%.spl spc
-	./spc -o $@ $<
+	./spc -g -o $@ $<
 
 examples/%.spl:
 
@@ -52,7 +52,7 @@ test-failure:
 	for SPL in tests/failure/*.spl; do \
 		TMP_OUT=$$(mktemp); \
 		OUT=$$(echo "$$SPL" | sed 's/\.[^.]*$$/.txt/'); \
-		./spc -o $$(mktemp) "$$SPL" >"$$TMP_OUT" 2>&1; \
+		./spc -g -o $$(mktemp) "$$SPL" >"$$TMP_OUT" 2>&1; \
 		if cmp -s "$$TMP_OUT" "$$OUT"; then \
 			rm "$$TMP_OUT"; \
 		else \
@@ -81,10 +81,13 @@ test-success: $(TEST_SUCCESS_EXECUTABLES)
 		fi; \
 	done
 
-tests/success/%-spl: tests/success/%-spl.s
+tests/success/%-spl: tests/success/%-spl.o
 	clang -O0 --debug -o $@ $<
 
+tests/success/%-spl.o: tests/success/%-spl.s
+	clang -c -O0 --debug -o $@ $<
+
 tests/success/%-spl.s: tests/success/%.spl spc
-	./spc -o $@ $<
+	./spc -g -o $@ $<
 
 tests/success/%.spl:
