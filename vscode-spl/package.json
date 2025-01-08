@@ -1,0 +1,30 @@
+{
+    "name": "vscode-spl",
+    "displayName": "Single Pass Language Support",
+    "description": "Provides basic syntax highlighting and language configuration for Single Pass Language (.spl).",
+    "version": "0.0.1",
+    "publisher": "Scott J Maddox",
+    "engines": {
+      "vscode": "^1.80.0"
+    },
+    "categories": [
+      "Programming Languages"
+    ],
+    "contributes": {
+      "languages": [
+        {
+          "id": "spl",
+          "aliases": ["Single Pass Language", "spl"],
+          "extensions": [".spl"],
+          "configuration": "./language-configuration.json"
+        }
+      ],
+      "grammars": [
+        {
+          "language": "spl",
+          "scopeName": "source.spl",
+          "path": "./syntaxes/SinglePassLanguage.tmLanguage.json"
+        }
+      ]
+    }
+  }

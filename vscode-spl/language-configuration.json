@@ -1,0 +1,22 @@
+{
+    // Single-line comment style
+    "comments": {
+      "lineComment": "//"
+    },
+
+    // Matching brackets
+    "brackets": [
+      ["{", "}"],
+      ["[", "]"],
+      ["(", ")"]
+    ],
+
+    // Auto-closing pairs (for brackets, quotes, etc.)
+    "autoClosingPairs": [
+      { "open": "{", "close": "}" },
+      { "open": "[", "close": "]" },
+      { "open": "(", "close": ")" },
+      { "open": "\"", "close": "\"" },
+      { "open": "'", "close": "'" }
+    ]
+  }

@@ -1,0 +1,48 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Single Pass Language",
+    "scopeName": "source.spl",
+    "fileTypes": ["spl"],
+    "patterns": [
+      {
+        "name": "comment.line.double-slash.spl",
+        "match": "//.*$"
+      },
+      {
+        "name": "keyword.declaration.spl",
+        "match": "\\b(const|fn|let|if|else|->)\\b"
+      },
+      {
+        "name": "storage.type.spl",
+        "match": "\\b(unit|never|i32)\\b"
+      },
+      {
+        "name": "keyword.operator.prefix.spl",
+        "match": "(?<![\\w])(?:-|!|~)(?![\\w])"
+      },
+      {
+        "name": "keyword.operator.infix.spl",
+        "match": "(\\*|\\/|%|\\+|-|<<|>>|<|<=|>|>=|==|!=|&&|\\|\\|)"
+      },
+      {
+        "name": "constant.numeric.dec.spl",
+        "match": "\\b\\d+(?:_\\d+)*\\b"
+      },
+      {
+        "name": "constant.numeric.hex.spl",
+        "match": "\\b0x[0-9A-Fa-f](?:[0-9A-Fa-f_])*\\b"
+      },
+      {
+        "name": "constant.numeric.oct.spl",
+        "match": "\\b0o[0-7](?:[0-7_])*\\b"
+      },
+      {
+        "name": "constant.numeric.bin.spl",
+        "match": "\\b0b[01](?:[01_])*\\b"
+      },
+      {
+        "name": "variable.spl",
+        "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+      }
+    ]
+  }
