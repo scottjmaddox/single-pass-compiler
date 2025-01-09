@@ -7,7 +7,8 @@ TEST_SUCCESS_SPL_FILES := $(wildcard tests/success/*.spl)
 
 EXAMPLE_C_ASM_FILES := $(EXAMPLE_C_FILES:.c=-c.s)
 EXAMPLE_SPL_ASM_FILES := $(EXAMPLE_SPL_FILES:.spl=-spl.s)
-TEST_SUCCESS_SPL_ASM_FILES := $(TEST_SUCCESS_SPL_FILES:.spl=-spl.s)
+TEST_SUCCESS_SPL_ASM_FILES := $(TEST_SUCCESS_SPL_FILES:.spl=.s)
+# TEST_SUCCESS_SPL_OBJECT_FILES := $(TEST_SUCCESS_SPL_FILES:.spl=.o)
 
 EXAMPLE_EXECUTABLES := $(EXAMPLE_C_ASM_FILES:.s=) $(EXAMPLE_SPL_ASM_FILES:.s=)
 TEST_SUCCESS_EXECUTABLES := $(TEST_SUCCESS_SPL_ASM_FILES:.s=)
@@ -15,6 +16,7 @@ TEST_SUCCESS_EXECUTABLES := $(TEST_SUCCESS_SPL_ASM_FILES:.s=)
 # Declare .s files as secondary to prevent their automatic removal
 .SECONDARY: $(EXAMPLE_C_ASM_FILES) $(EXAMPLE_SPL_ASM_FILES) \
 			$(TEST_SUCCESS_SPL_ASM_FILES)
+#$(TEST_SUCCESS_SPL_OBJECT_FILES)
 
 # Default target
 all: spc examples test
@@ -81,13 +83,16 @@ test-success: $(TEST_SUCCESS_EXECUTABLES)
 		fi; \
 	done
 
-tests/success/%-spl: tests/success/%-spl.o
-	clang -O0 --debug -o $@ $<
+# tests/success/%: tests/success/%.o
+# 	clang -g -O0 --debug -o $@ $<
 
-tests/success/%-spl.o: tests/success/%-spl.s
-	clang -c -O0 --debug -o $@ $<
+# tests/success/%.o: tests/success/%.s
+# 	clang -c -g -O0 --debug -o $@ $<
 
-tests/success/%-spl.s: tests/success/%.spl spc
+tests/success/%: tests/success/%.s
+	clang -g -O0 -o $@ $<
+
+tests/success/%.s: tests/success/%.spl spc
 	./spc -g -o $@ $<
 
 tests/success/%.spl:

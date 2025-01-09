@@ -25,6 +25,11 @@
           "scopeName": "source.spl",
           "path": "./syntaxes/SinglePassLanguage.tmLanguage.json"
         }
+      ],
+      "breakpoints": [
+        {
+          "language": "spl"
+        }
       ]
     }
   }

@@ -251,6 +251,7 @@ struct scope_node {
 };
 
 struct context {
+    char *cwd;
     FILE *output_file;
     char *input_file_path;
     char *src;
@@ -877,10 +878,77 @@ take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN to
 //////////////////////
 
 static void
-emit_program_prologue(struct context *ctx) {
+emit_debug_file(struct context *ctx) {
     if (ctx->emit_debug_info) {
-        fprintf(ctx->output_file, "\t.file\t%zu \"%s\"\n", ctx->debug_file_idx, ctx->input_file_path);
+        fprintf(ctx->output_file, "\t.file\t%zu \"%s\" \"%s\"\n", ctx->debug_file_idx, ctx->cwd, ctx->input_file_path);
     }
+}
+
+static void
+emit_debug_loc(struct context *ctx, struct location loc) {
+    if (ctx->emit_debug_info) {
+        fprintf(ctx->output_file, "\t.loc\t%zu %zu %zu\n", ctx->debug_file_idx, loc.line, loc.col);
+    }
+}
+
+// static void
+// emit_debug_tables(struct context *ctx) {
+//     if (ctx->emit_debug_info) {
+//         fprintf(ctx->output_file,
+//             "\t.section __DWARF,__debug_abbrev,regular,debug\n"
+//             "\n"
+//             "\t; Abbreviation code = 1\n"
+//             "\t; Tag = DW_TAG_compile_unit (0x11)\n"
+//             "\t; Children = 0 (no children)\n"
+//             "\n"
+//             "\t; Then we list attributes with their forms, ending in two 0 bytes.\n"
+//             "\t; We'll specify a single attribute: DW_AT_stmt_list (the offset into .debug_line).\n"
+//             "\t;   DW_AT_stmt_list = 0x10\n"
+//             "\t;   DW_FORM_data4   = 0x06  (indicates a 4-byte offset)\n"
+//             "\n"
+//             "\t.byte 1                ; Abbrev code\n"
+//             "\t.uleb128 0x11          ; DW_TAG_compile_unit\n"
+//             "\t.byte 0                ; has_children = 0\n"
+//             "\n"
+//             "\t; Attribute 1: DW_AT_stmt_list, DW_FORM_data4\n"
+//             "\t.uleb128 0x10          ; DW_AT_stmt_list\n"
+//             "\t.uleb128 0x06          ; DW_FORM_data4\n"
+//             "\n"
+//             "\t; End of attribute list for this abbreviation\n"
+//             "\t.byte 0\n"
+//             "\t.byte 0\n"
+//             "\t\n"
+//             "\t; Now terminate the entire abbreviation table with a 0\n"
+//             "\t.byte 0\n"
+
+//             "\t.section __DWARF,__debug_info,regular,debug\n"
+//             "\n"
+//             "\t; We'll label things so we can compute the length field.\n"
+//             "\t.align 4\n"
+//             "\t.Lcu_begin:\n"
+//             "\t.long .Lcu_end - .Lcu_begin - 4   ; unit_length = size of CU data minus itself\n"
+//             "\n"
+//             "\t.word 4            ; DWARF version 4\n"
+//             "\t.long 0            ; debug_abbrev_offset = 0 (since our abbrev table starts at 0 in that section)\n"
+//             "\t.byte 8            ; address_size = 8 (64-bit)\n"
+//             "\n"
+//             "\t; --- Now the compile unit DIE itself ---\n"
+//             "\t.byte 1            ; abbreviation code = 1 (the one we defined in __debug_abbrev)\n"
+//             "\n"
+//             "\t; The single attribute: DW_AT_stmt_list (DW_FORM_data4)\n"
+//             "\t; We'll set it to 0 for now. If your line table starts at offset 0 in .debug_line, that’s fine.\n"
+//             "\t.long 0\n"
+//             "\n"
+//             "\t; End of DIEs in this CU\n"
+//             "\t.byte 0            ; null entry to mark end of children\n"
+//             "\n"
+//             "\t.Lcu_end:\n"
+//         );
+//     }
+// }
+
+static void
+emit_program_prologue(struct context *ctx) {
     fprintf(ctx->output_file,
         "\t.section\t__TEXT,__text,regular,pure_instructions\n"
     );
@@ -889,6 +957,7 @@ emit_program_prologue(struct context *ctx) {
 static void
 emit_program_epilogue(struct context *ctx) {
     fprintf(ctx->output_file, "\n.subsections_via_symbols\n");
+    // emit_debug_tables(ctx);
 }
 
 static void
@@ -925,19 +994,19 @@ static void
 emit_fn_prologue(struct context *ctx, struct token name_tok) {
     struct str name = token_str(ctx, name_tok);
     emit_comment(ctx, "fn prologue");
-    if (ctx->emit_debug_info) {
-        fprintf(ctx->output_file, "\t.loc\t%zu %zu %zu\n", ctx->debug_file_idx, name_tok.loc.line, name_tok.loc.col);
-    }
     fprintf(ctx->output_file,
         "\t.globl\t_%.*s\n"
         "\t.p2align\t2\n"
         "_%.*s:\n"
-        "\t.cfi_startproc\n"
-        "\tstp\tx29, x30, [sp, #-16]!\n"
-        "\tmov\tx29, sp"
-        "\n",
+        "\t.cfi_startproc\n",
         (int)name.len, name.ptr,
         (int)name.len, name.ptr
+    );
+    emit_debug_loc(ctx, name_tok.loc);
+    fprintf(ctx->output_file,
+        "\tstp\tx29, x30, [sp, #-16]!\n"
+        "\tmov\tx29, sp"
+        "\n"
     );
     ctx->stack_offset = 0;
 }
@@ -1106,6 +1175,7 @@ static void
 compile_program(struct context *ctx) {
     // EBNF: program = { const_def } ;
     emit_program_prologue(ctx);
+    emit_debug_file(ctx);
     push_scope(ctx);
     while (peek_token_kind(ctx) != TOKEN_EOF) {
         compile_const_def(ctx);
@@ -1176,6 +1246,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     emit_fn_prologue(ctx, *name_tok);
     struct type block_return_type = compile_block(ctx, false);
     require_subtype(ctx, block_return_type, declared_return_type);
+    emit_debug_loc(ctx, block_return_type.span.start);
     emit_fn_epilogue(ctx, block_return_type.kind);
     pop_scope(ctx);
 }
@@ -1209,6 +1280,7 @@ compile_var_expr(struct context *ctx) {
     struct str name_str = token_str(ctx, name_tok);
     struct symbol_node *sym_node = find_symbol_node(ctx, name_str);
     if (sym_node == NULL) { fail_undefined_var(ctx, name_tok); }
+    emit_debug_loc(ctx, name_tok.loc);
     emit_load_var(ctx, sym_node->sym.var_stack_offset);
     // TODO: emit load instruction
     return sym_node->sym.type;
@@ -1314,11 +1386,13 @@ compile_expr(struct context *ctx, int min_binding_power) {
             }
             size_t true_label = ctx->local_label_count++;
             size_t done_label = ctx->local_label_count++;
+            emit_debug_loc(ctx, op_tok.loc);
             emit_local_forward_branch_if_nonzero(ctx, true_label);
             right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
             if (right_type.kind != TYPE_I32) {
                 fail_expected_type(ctx, TYPE_I32, right_type);
             }
+            emit_debug_loc(ctx, op_tok.loc);
             emit_local_forward_branch_if_nonzero(ctx, true_label);
             emit_int_literal(ctx, 0);
             emit_local_forward_branch(ctx, done_label);
@@ -1336,11 +1410,13 @@ compile_expr(struct context *ctx, int min_binding_power) {
             }
             size_t false_label = ctx->local_label_count++;
             size_t done_label = ctx->local_label_count++;
+            emit_debug_loc(ctx, op_tok.loc);
             emit_local_forward_branch_if_zero(ctx, false_label);
             right_type = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
             if (right_type.kind != TYPE_I32) {
                 fail_expected_type(ctx, TYPE_I32, right_type);
             }
+            emit_debug_loc(ctx, op_tok.loc);
             emit_local_forward_branch_if_zero(ctx, false_label);
             emit_int_literal(ctx, 1);
             emit_local_forward_branch(ctx, done_label);
@@ -1360,6 +1436,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
             if (right_type.kind != TYPE_I32) {
                 fail_expected_type(ctx, TYPE_I32, right_type);
             }
+            emit_debug_loc(ctx, op_tok.loc);
             emit_binary_op(ctx, op, left_type.kind, right_type.kind);
             result_type = (struct type){
                 .kind = TYPE_I32, // TODO: infer type
@@ -1383,8 +1460,10 @@ compile_if_expr(struct context *ctx) {
     }
     size_t false_label = ctx->local_label_count++;
     size_t done_label = ctx->local_label_count++;
+    emit_debug_loc(ctx, if_tok.loc);
     emit_local_forward_branch_if_zero(ctx, false_label);
     struct type then_type = compile_block(ctx, true);
+    emit_debug_loc(ctx, if_tok.loc);
     emit_local_forward_branch(ctx, done_label);
     emit_local_label(ctx, false_label);
     struct type return_type = { 0 };
@@ -1420,10 +1499,11 @@ compile_if_expr(struct context *ctx) {
 static struct type
 compile_prefix_op_expr(struct context *ctx) {
     // EBNF: prefix_op = "!" | "-" ;
+    struct token op_tok;
     struct type return_type = { 0 };
     switch (peek_token_kind(ctx)) {
     case TOKEN_MINUS:
-        take_token_expect_kind(ctx, NULL, TOKEN_MINUS);
+        take_token_expect_kind(ctx, &op_tok, TOKEN_MINUS);
         if (peek_token_kind(ctx) == TOKEN_INT_LITERAL) {
             return_type = compile_int_literal(ctx, true);
             if (return_type.kind != TYPE_I32) {
@@ -1434,23 +1514,26 @@ compile_prefix_op_expr(struct context *ctx) {
             if (return_type.kind != TYPE_I32) {
                 fail_expected_type(ctx, TYPE_I32, return_type);
             }
+            emit_debug_loc(ctx, op_tok.loc);
             emit_unary_op(ctx, UNARY_OP_NEG);
         }
         break;
     case TOKEN_TILDE:
-        take_token_expect_kind(ctx, NULL, TOKEN_TILDE);
+        take_token_expect_kind(ctx, &op_tok, TOKEN_TILDE);
         return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_BITWISE_NOT]);
         if (return_type.kind != TYPE_I32) {
             fail_expected_type(ctx, TYPE_I32, return_type);
         }
+        emit_debug_loc(ctx, op_tok.loc);
         emit_unary_op(ctx, UNARY_OP_BITWISE_NOT);
         break;
     case TOKEN_EXCLAMATION:
-        take_token_expect_kind(ctx, NULL, TOKEN_EXCLAMATION);
+        take_token_expect_kind(ctx, &op_tok, TOKEN_EXCLAMATION);
         return_type = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
         if (return_type.kind != TYPE_I32) {
             fail_expected_type(ctx, TYPE_I32, return_type);
         }
+        emit_debug_loc(ctx, op_tok.loc);
         emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
         break;
     default: assert(!"unreachable");
@@ -1471,6 +1554,7 @@ compile_fn_call(struct context *ctx) {
     struct str name_str = token_str(ctx, name_tok);
     if (str_starts_with(name_str, BUILTIN_STR)) {
         if (str_equals(name_str, BUILTIN_TRAP_STR)) {
+            emit_debug_loc(ctx, name_tok.loc);
             emit_builtin_trap(ctx);
             return (struct type){ .kind = TYPE_NEVER, .span = fn_call_span};
         }
@@ -1484,6 +1568,7 @@ compile_fn_call(struct context *ctx) {
     struct type_node *return_type_node = fn_type.arg_list;
     for (; return_type_node->next != NULL; return_type_node = return_type_node->next) {}
     struct type return_type = return_type_node->type;
+    emit_debug_loc(ctx, name_tok.loc);
     emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, return_type.kind);
     return_type.span = fn_call_span;
     return return_type;
@@ -1580,6 +1665,7 @@ compile_int_literal(struct context *ctx, bool negate) {
             fail_int_literal_out_of_range(ctx, tok);
         }
     }
+    emit_debug_loc(ctx, tok.loc);
     emit_int_literal(ctx, value);
     return (struct type){ .kind = TYPE_I32, .span = token_span(ctx, tok) };
 }
@@ -1666,6 +1752,13 @@ main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     char *input_file_path = argv[optind];
+
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        fprintf(stderr, "error: cannot get current working directory: %s\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
+
     if (output_file_path == NULL) {
         get_default_output_file_path(input_file_path, output_file_path_buf);
         output_file_path = output_file_path_buf;
@@ -1742,6 +1835,7 @@ main(int argc, char *argv[]) {
 
     // Compile the program
     struct context ctx = {
+        .cwd = cwd,
         .output_file = tmp_output_file,
         .input_file_path = input_file_path,
         .src = (char *)mapped_input_file,
