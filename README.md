@@ -87,7 +87,6 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] local `let` variables
 - [x] never type
 - [x] basic vscode language support
-- [ ] `-g` / `--debug` option: emit debug directives, e.g. `.file` and `.loc`
 - [ ] function parameters
 - [ ] reserve builtin type idents
 - [ ] add line numbers to error messages
