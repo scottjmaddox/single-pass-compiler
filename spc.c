@@ -854,7 +854,7 @@ static void
 fail_int_literal_out_of_range(struct context *ctx, struct token tok) {
     fprintf(stderr, "error: integer literal out of range\n");
     eprint_span(ctx, token_span(ctx, tok));
-    fprintf(stderr, "Range: %lld to %lld\n", LLONG_MIN, LLONG_MAX);
+    fprintf(stderr, "Range: -2¹²⁷ to 2¹²⁷ - 1\n");
     exit(EXIT_FAILURE);
 }
 
@@ -1053,10 +1053,10 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, enum TYPE left_type, enum
 }
 
 static void
-emit_int_literal(struct context *ctx, long long int value) {
+emit_int_literal(struct context *ctx, int value) {
     // push the literal onto the stack
     emit_comment(ctx, "int literal");
-    fprintf(ctx->output_file, "\tldr\tw0, =%lld\n", value);
+    fprintf(ctx->output_file, "\tldr\tw0, =%d\n", value);
     emit_push(ctx, "w0");
 }
 
@@ -1480,11 +1480,9 @@ compile_fn_call(struct context *ctx) {
     return return_type;
 }
 
-static struct type
-compile_int_literal(struct context *ctx, bool negate) {
-    struct token tok;
-    take_token_expect_kind(ctx, &tok, TOKEN_INT_LITERAL);
-    unsigned long long int uvalue = 0;
+static __int128
+parse_int_literal(struct context *ctx, struct token tok, bool negate) {
+    __int128 value128 = 0;
     char *src = ctx->src + tok.loc.idx;
     size_t len = tok.len;
     size_t i = 0;
@@ -1495,12 +1493,12 @@ compile_int_literal(struct context *ctx, bool negate) {
             // binary literal
             for (i += 2; i < len; i++) {
                 if (src[i] == '_') { continue; }
-                if (__builtin_mul_overflow(uvalue, 2, &uvalue)) {
+                if (__builtin_mul_overflow(value128, 2, &value128)) {
                     fail_int_literal_out_of_range(ctx, tok);
                 }
                 char digit = src[i] - '0';
                 assert(digit < 2);
-                if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                if (__builtin_add_overflow(value128, digit, &value128)) {
                     fail_int_literal_out_of_range(ctx, tok);
                 }
             }
@@ -1509,12 +1507,12 @@ compile_int_literal(struct context *ctx, bool negate) {
             // octal literal
             for (i += 2; i < len; i++) {
                 if (src[i] == '_') { continue; }
-                if (__builtin_mul_overflow(uvalue, 8, &uvalue)) {
+                if (__builtin_mul_overflow(value128, 8, &value128)) {
                     fail_int_literal_out_of_range(ctx, tok);
                 }
                 char digit = src[i] - '0';
                 assert(digit < 8);
-                if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                if (__builtin_add_overflow(value128, digit, &value128)) {
                     fail_int_literal_out_of_range(ctx, tok);
                 }
             }
@@ -1523,7 +1521,7 @@ compile_int_literal(struct context *ctx, bool negate) {
             // hexadecimal literal
             for (i += 2; i < len; i++) {
                 if (src[i] == '_') { continue; }
-                if (__builtin_mul_overflow(uvalue, 16, &uvalue)) {
+                if (__builtin_mul_overflow(value128, 16, &value128)) {
                     fail_int_literal_out_of_range(ctx, tok);
                 }
                 char digit;
@@ -1537,7 +1535,7 @@ compile_int_literal(struct context *ctx, bool negate) {
                     assert(!"unreachable");
                 }
                 assert(digit < 16);
-                if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+                if (__builtin_add_overflow(value128, digit, &value128)) {
                     fail_int_literal_out_of_range(ctx, tok);
                 }
             }
@@ -1548,29 +1546,29 @@ compile_int_literal(struct context *ctx, bool negate) {
         // decimal literal
         for (; i < len; i++) {
             if (src[i] == '_') { continue; }
-            if (__builtin_mul_overflow(uvalue, 10, &uvalue)) {
+            if (__builtin_mul_overflow(value128, 10, &value128)) {
                 fail_int_literal_out_of_range(ctx, tok);
             }
             char digit = src[i] - '0';
             assert(digit < 10);
-            if (__builtin_add_overflow(uvalue, digit, &uvalue)) {
+            if (__builtin_add_overflow(value128, digit, &value128)) {
                 fail_int_literal_out_of_range(ctx, tok);
             }
         }
     }
-    if (negate && uvalue > LLONG_MAX) {
-        fail_int_literal_out_of_range(ctx, tok);
-    }
-    long long int value;
     if (negate) {
-        if (__builtin_sub_overflow(0, uvalue, &value)) {
-            fail_int_literal_out_of_range(ctx, tok);
-        }
-    } else {
-        if (__builtin_add_overflow(0, uvalue, &value)) {
+        if (__builtin_sub_overflow(0, value128, &value128)) {
             fail_int_literal_out_of_range(ctx, tok);
         }
     }
+    return value128;
+}
+
+static struct type
+compile_int_literal(struct context *ctx, bool negate) {
+    struct token tok;
+    take_token_expect_kind(ctx, &tok, TOKEN_INT_LITERAL);
+    __int128 value = parse_int_literal(ctx, tok, negate);
     emit_int_literal(ctx, value);
     return (struct type){ .kind = TYPE_I32, .span = token_span(ctx, tok) };
 }
