@@ -1,4 +1,4 @@
-error: expected type i32, not unit
+error: expected an integer type, not `unit`:
  --> tests/failure/if_cond_expects_i32.spl:2:8
   |
   |     if {} {}

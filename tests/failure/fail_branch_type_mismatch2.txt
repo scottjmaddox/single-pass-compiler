@@ -1,0 +1,10 @@
+error: branch type mismatch between `i32` from:
+ --> tests/failure/fail_branch_type_mismatch2.spl:2:10
+  |
+  |     if 1 { 0:i32 } else if 1 { 0:u32 } else { 0:u32 }
+  |          ^^^^^^^^^
+  and `u32` from:
+ --> tests/failure/fail_branch_type_mismatch2.spl:2:25
+  |
+  |     if 1 { 0:i32 } else if 1 { 0:u32 } else { 0:u32 }
+  |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

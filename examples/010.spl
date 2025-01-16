@@ -1,3 +1,0 @@
-const main = fn() -> i32 {
-    __builtin_trap()
-}

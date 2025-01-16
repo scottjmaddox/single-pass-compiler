@@ -1,0 +1,5 @@
+error: undefined type
+ --> tests/failure/undefined_type_u65.spl:1:22
+  |
+  | const main = fn() -> u65 {}
+  |                      ^^^

@@ -3,4 +3,4 @@ error: reserved identifier
   |
   |     let __builtin = 0
   |         ^^^^^^^^^
-Identifiers starting with '__builtin' are reserved.
+  note: identifiers starting with '__builtin' are reserved.

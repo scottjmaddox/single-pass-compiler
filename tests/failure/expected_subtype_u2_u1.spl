@@ -1,0 +1,2 @@
+const foo = fn() -> u2 { 0:u2 }
+const main = fn() -> u1 { foo() }

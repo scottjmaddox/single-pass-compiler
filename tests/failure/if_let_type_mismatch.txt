@@ -1,4 +1,4 @@
-error: expected type i32, not unit
+error: expected an integer type, not `unit`:
  --> tests/failure/if_let_type_mismatch.spl:2:8
   |
   |     if let a = 0 {}

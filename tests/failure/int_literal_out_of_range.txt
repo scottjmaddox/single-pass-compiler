@@ -3,4 +3,4 @@ error: integer literal out of range
   |
   | const main = fn() { 9999999999999999999999999999999999999999 }
   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Range: -2¹²⁷ to 2¹²⁷ - 1
+  expected range: -2⁶³ to 2⁶⁴ - 1

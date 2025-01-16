@@ -20,7 +20,7 @@ const_def = "const" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = "unit" | "never" | "i32" ;
 block = "{" { expr } "}" ;
-expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
+expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident "=" expr ;
 fn_call = ident "(" ")" ;
@@ -29,7 +29,7 @@ op_expr = prefix_op expr | expr infix_op expr ;
 
 ident = alpha { alphanumeric } ;
 int_literal = dec_literal | bin_literal | oct_literal | hex_literal ;
-dec_literal = dec_digit { "_" | dec_digit } ;
+dec_literal = [ "-" ] dec_digit { "_" | dec_digit } ;
 bin_literal = "0b" { "_" | bin_digit } bin_digit { "_" | bin_digit } ;
 oct_literal = "0o" { "_" | oct_digit } oct_digit { "_" | oct_digit } ;
 hex_literal = "0x" { "_" | hex_digit } hex_digit { "_" | hex_digit } ;
@@ -48,15 +48,16 @@ infix_op = "*" | "/" | "%" | "+" | "-" | "<<" | ">>"
 line_comment ::= "//" { ? any character except '\n' ? } "\n"
 ```
 
-The following lexical forms that ambiguously resemble number literals are reserved:
+The following lexical forms that ambiguously resemble valid number literals are reserved:
 
 ```ebnf
-reserved_number = bin_literal ( "2" .. "9" )
+reserved_number =
+                | "-0b" | "-0o" | "-0x"
+                | "0" dec_literal
+                | bin_literal ( "2" .. "9" )
                 | oct_literal ( "8" .. "9" )
                 | int_literal ( "." | "a" .. "f" | "A" .. "F" )
-                | "0b" { "_" }
-                | "0o" { "_" }
-                | "0x" { "_" }
+                | "0b" { "_" } | "0o" { "_" } | "0x" { "_" }
 ```
 
 ## References
@@ -87,23 +88,50 @@ reserved_number = bin_literal ( "2" .. "9" )
 - [x] local `let` variables
 - [x] never type
 - [x] basic vscode language support
-- [ ] function parameters
+- [x] `u1`-`u64`, `i1`-`i64` types with [subtype](type_system.md) checking
+- [x] default to i64, and always use 64-bit ops, for now
+- [x] inline type annotation / coersion
+- [x] add `let _ =` as explicit drop
+- [ ] const int types with compile-time evaluation of ops between two constants
+  - the type is/contains the integer value
+- [ ] test `fail_invalid_type_for_arithmetic`
+- [ ] test `fail_expected_subtype`
+- [ ] test parsing / emission of i64 minimum value
+- [ ] test that "-0b" | "-0o" | "-0x" are reserved
+- [ ] test that "0" { "0" } dec_literal is reserved
+- [ ] test that 0b0 has type `u1`
+- [ ] test that 0o0 has type `u3`
+- [ ] test that 0x0 has type `u4`
+- [ ] test `2:u1` fails
+- [ ] test `-1:u1` fails
+- [ ] test `-1:i1` succeeds
+- [ ] test `2:u32 + 2:u32 == 4:u32` succeeds
+
+
+- [ ] measure test coverage
+- [ ] `let` type annotations
+- [ ] array type, array literals
+- [ ] slice type, slice literals
+- [ ] byte-slice string literals, i.e. `b"Hello"`
+- [ ] nullable and non-nullable pointer types, with coersion
+- [ ] up to 8 (single-word) function parameters (i.e. passed via registers)
+- [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
+  - e.g. `const write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
 - [ ] reserve builtin type idents
 - [ ] add line numbers to error messages
 - [ ] support multi-line span error messages
 - [ ] explicit tail calls?
 - [ ] `return` with value
 - [ ] `loop`, `continue`, and `break` with optional label and value
-- [ ] nullable and non-nullable pointer types
 - [ ] `match` expressions
 - [ ] function pointers and indirect calls
 - [ ] bool type; `if`, `&&`, `||` expect bool
-- [ ] u8 type, integer literal suffixes, type promotion
+- [ ] more than 8 (single-word) function parameters (i.e. passed via the stack)
 - [ ] struct types
 - [ ] `let` pattern matching assignment; returns bool: true on match, false otherwise
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
-- [ ] all iN and uN types a la llvm/zig?
+- [ ] automatic type promotion?
 - [ ] reference types?
 - [ ] named return slots a la go? with uninitialized tracking
 - [ ] local `const`

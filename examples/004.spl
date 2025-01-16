@@ -1,4 +1,0 @@
-// line comment 1
-const main = fn() -> i32 {
-    1_000 // line comment 2
-}

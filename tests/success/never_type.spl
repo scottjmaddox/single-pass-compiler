@@ -3,7 +3,7 @@ const test_unreachable_function = fn() -> never {
     __builtin_trap()
 }
 
-const test_if_expression = fn() -> i32 {
+const test_if_expression = fn() -> i64 {
     let cond = 1
     // If cond == 1, return 123; otherwise, trap.
     // The compiler should accept that the `else` branch is `never`,
@@ -15,7 +15,7 @@ const test_if_expression = fn() -> i32 {
     }
 }
 
-const test_chained_if = fn() -> i32 {
+const test_chained_if = fn() -> i64 {
     let x = -1
     if x == 0 {
         0
@@ -28,14 +28,14 @@ const test_chained_if = fn() -> i32 {
     }
 }
 
-const test_inline_trap = fn() -> i32 {
+const test_inline_trap = fn() -> i64 {
     // Some compilers might warn "unreachable code" below if you add more lines.
     // But from the type system's perspective, returning `never` is acceptable
     // where an i32 is expected, because it never returns.
     __builtin_trap()
 }
 
-const nested_block_never = fn() -> i32 {
+const nested_block_never = fn() -> i64 {
     let cond = 1
     // The outer block is an expression returning i32
     {

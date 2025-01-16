@@ -1,0 +1,10 @@
+error: function call to non-function:
+ --> tests/failure/fn_call_non_fn.spl:3:5
+  |
+  |     a()
+  |     ^
+`a` has type `i64` and is defined here:
+ --> tests/failure/fn_call_non_fn.spl:2:9
+  |
+  |     let a = 1
+  |         ^

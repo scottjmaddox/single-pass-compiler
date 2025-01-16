@@ -3,4 +3,4 @@ error: unexpected token: RESERVED
   |
   | const main = fn() -> i32 { 0b2 }
   |                            ^^^
-Expected an expression.
+  expected: an expression.

@@ -1,6 +1,6 @@
-error: if without else has non-unit type: i32
- --> tests/failure/if_without_else_non_unit.spl:2:12
+error: if without else has non-unit type `i64`:
+ --> tests/failure/if_without_else_non_unit.spl:2:10
   |
   |     if 1 { 1 }
-  |            ^
-Expected type unit or a matching else type.
+  |          ^^^^^
+  expected type `unit` or a matching else type.

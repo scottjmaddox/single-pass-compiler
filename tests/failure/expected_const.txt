@@ -3,4 +3,4 @@ error: unexpected token: INT_LITERAL
   |
   | 1
   | ^
-Expected: KEYWORD_CONST
+  expected: KEYWORD_CONST

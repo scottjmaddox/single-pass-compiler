@@ -3,4 +3,4 @@ error: reserved identifier
   |
   | const __builtin = fn() {}
   |       ^^^^^^^^^
-Identifiers starting with '__builtin' are reserved.
+  note: identifiers starting with '__builtin' are reserved.
