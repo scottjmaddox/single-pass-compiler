@@ -18,7 +18,7 @@ The currently supported grammar, in extended Backus–Naur form (EBNF):
 program = { const_def } ;
 const_def = "const" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
-type_expr = "unit" | "never" | "i32" ;
+type_expr = ident ;
 block = "{" { expr } "}" ;
 expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
@@ -99,8 +99,8 @@ reserved_number =
   - [x] fix `error: expected an integer type, not const int:` on `0 && __builtin_trap()`
   - [x] fix `error: expected an integer type, not const int:` on `1 || __builtin_trap()`
   - [x] test every pair of CONST_INT, INT binary ops?
-  - [ ] audit all failure test error messages
-  - [ ] any op applied to TY_NEVER should return TY_NEVER?
+  - [x] test and fix ops applied to TY_NEVER
+  - [ ] `bool is_const` on type?
 - [ ] test and fix `if v { __builtin_trap() } else { 1 }`
   - we'll need to unify the types, rather than just calling `require_subtype_coerce`.
 - [ ] test deadcode elim after `__builtin_trap()` in middle of a block

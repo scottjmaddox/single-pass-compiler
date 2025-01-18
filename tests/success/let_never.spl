@@ -1,0 +1,5 @@
+const let_never = fn() {
+    (let a = __builtin_trap()): never
+}
+
+const main = fn() {}

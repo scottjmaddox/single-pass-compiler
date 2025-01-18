@@ -1167,7 +1167,7 @@ emit_push_int(struct context *ctx, uint64_t value) {
 }
 
 static void
-emit_int_to_bool(struct context *ctx) {
+emit_not_equal_zero(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "int to bool");
     emit_pop(ctx, "x0");
@@ -1264,7 +1264,6 @@ emit_builtin_trap(struct context *ctx) {
 
 static void
 require_subtype_of_int(struct context *ctx, struct type_span tysp) {
-    if (tysp.type.kind == TY_CONST_INT || tysp.type.kind == TY_INT) { return; }
     switch (tysp.type.kind) {
     case TY_UNIT:
     case TY_CONST_FN:
@@ -1333,18 +1332,16 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     if (type_equals(from.type, to.type)) { return to.type; }
     require_subtype(ctx, from, to);
     switch (from.type.kind) {
-    case TY_UNIT:
-    case TY_NEVER:
-    case TY_CONST_FN:
-        break;
+    case TY_UNIT: return (struct type){ .kind = TY_UNIT };
+    case TY_NEVER: return (struct type){ .kind = TY_NEVER };
+    case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
     case TY_CONST_INT:
         if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
-        break;
+        return to.type;
     case TY_INT:
         // NOTE: currently, no code to emit, since all integers are stored in 64 bits
-        break;
+        return to.type;
     }
-    return to.type;
 }
 
 static void compile_program(struct context *ctx);
@@ -1472,7 +1469,11 @@ compile_let_expr(struct context *ctx) {
     // TODO: check for shadowed var in the same scope, and drop their value (and reuse the stack slot?)
     take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
     struct type_span expr_tysp = compile_expr(ctx, 0);
-    if (str_equals(token_str(ctx, name_tok), WILDCARD_STR)) {
+    struct span let_span = { .start = let_tok.loc, .end = expr_tysp.span.end };
+    struct type_span return_tysp = { .type = { .kind = TY_UNIT }, .span = let_span };
+    if (expr_tysp.type.kind == TY_NEVER) {
+        return_tysp.type = (struct type){ .kind = TY_NEVER };
+    } else if (str_equals(token_str(ctx, name_tok), WILDCARD_STR)) {
         emit_drop_type(ctx, expr_tysp.type.kind);
     } else  {
         switch (expr_tysp.type.kind) {
@@ -1492,8 +1493,6 @@ compile_let_expr(struct context *ctx) {
         }
         }
     }
-    struct span let_span = { .start = let_tok.loc, .end = expr_tysp.span.end };
-    struct type_span return_tysp = { .type = { .kind = TY_UNIT }, .span = let_span };
     return return_tysp;
 }
 
@@ -1552,7 +1551,7 @@ compile_block(struct context *ctx, bool create_scope) {
 }
 
 static struct type
-eval_const_binary_op(struct context *ctx, enum BINARY_OP op, struct type_span left, struct type_span right, struct span span) {
+eval_const_int_binary_op(struct context *ctx, enum BINARY_OP op, struct type_span left, struct type_span right, struct span span) {
     assert(left.type.kind == TY_CONST_INT && right.type.kind == TY_CONST_INT);
     struct type result_type = { .kind = TY_CONST_INT };
     switch (op) {
@@ -1702,8 +1701,16 @@ compile_expr(struct context *ctx, int min_binding_power) {
         struct type result_type = { 0 };
         switch (op) {
         case BINARY_OP_LOGICAL_OR: {
-            switch (left_tysp.type.kind) {
-            case TY_CONST_INT:
+            require_subtype_of_int(ctx, left_tysp);
+            if (left_tysp.type.kind == TY_NEVER) {
+                bool was_dead_code = ctx->is_dead_code;
+                ctx->is_dead_code = true;
+                right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                ctx->is_dead_code = was_dead_code;
+                // TODO: warn about dead code
+                require_subtype_of_int(ctx, right_tysp);
+                result_type = (struct type){ .kind = TY_NEVER };
+            } else if (left_tysp.type.kind == TY_CONST_INT) {
                 if (left_tysp.type.value != 0) {
                     // NOTE: LHS is statically true; compile RHS as dead code
                     bool was_dead_code = ctx->is_dead_code;
@@ -1716,60 +1723,63 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 } else {
                     // NOTE: LHS is statically false; compile the RHS
                     right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-                    switch (right_tysp.type.kind) {
-                    case TY_CONST_INT:
-                        // NOTE: RHS is a const int; return a const int
+                    require_subtype_of_int(ctx, right_tysp);
+                    if (right_tysp.type.kind == TY_NEVER) {
+                        result_type = (struct type){ .kind = TY_NEVER };
+                    } else if (right_tysp.type.kind == TY_CONST_INT) {
                         result_type = (struct type){ .kind = TY_CONST_INT, .value = (right_tysp.type.value != 0) };
-                        break;
-                    case TY_INT:
-                        // NOTE: RHS is a non-const int; convert to u1
-                        emit_int_to_bool(ctx);
+                    } else if (right_tysp.type.kind == TY_INT) {
+                        emit_not_equal_zero(ctx);
                         result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
-                        break;
-                    default: fail_expected_type_int(ctx, left_tysp);
+                    } else {
+                        assert(!"unreachable");
                     }
                 }
-                break;
-            case TY_INT: {
+            } else if (left_tysp.type.kind == TY_INT) {
                 size_t true_label = ctx->local_label_count++;
                 size_t done_label = ctx->local_label_count++;
                 emit_local_forward_branch_if_nonzero(ctx, true_label);
                 right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-                switch (right_tysp.type.kind) {
-                case TY_CONST_INT:
-                    if (right_tysp.type.value != 0) {
-                        // NOTE: RHS is statically true; only emit the true case code
-                        emit_local_label(ctx, true_label);
-                        emit_push_int(ctx, 1);
-                    } else {
-                        // NOTE: RHS is statically false; skip the RHS's branch_if_nonzero
-                        emit_push_int(ctx, 0);
-                        emit_local_forward_branch(ctx, done_label);
-                        emit_local_label(ctx, true_label);
-                        emit_push_int(ctx, 1);
-                        emit_local_label(ctx, done_label);
-                    }
-                    break;
-                case TY_INT:
+                require_subtype_of_int(ctx, right_tysp);
+                if (right_tysp.type.kind == TY_NEVER
+                || (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value != 0)) {
+                    // NOTE: RHS is statically true (or never); only emit the true case code
+                    emit_local_label(ctx, true_label);
+                    emit_push_int(ctx, 1);
+                } else if (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value == 0) {
+                    // NOTE: RHS is statically false; skip the RHS's branch_if_nonzero
+                    emit_push_int(ctx, 0);
+                    emit_local_forward_branch(ctx, done_label);
+                    emit_local_label(ctx, true_label);
+                    emit_push_int(ctx, 1);
+                    emit_local_label(ctx, done_label);
+                } else if (right_tysp.type.kind == TY_INT) {
                     emit_local_forward_branch_if_nonzero(ctx, true_label);
                     emit_push_int(ctx, 0);
                     emit_local_forward_branch(ctx, done_label);
                     emit_local_label(ctx, true_label);
                     emit_push_int(ctx, 1);
                     emit_local_label(ctx, done_label);
-                    break;
-                default: fail_expected_type_int(ctx, right_tysp);
+                } else {
+                    assert(!"unreachable");
                 }
                 result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
-                break;
-            }
-            default: fail_expected_type_int(ctx, left_tysp);
+            } else {
+                assert(!"unreachable");
             }
             break;
         }
         case BINARY_OP_LOGICAL_AND: {
-            switch (left_tysp.type.kind) {
-            case TY_CONST_INT:
+            require_subtype_of_int(ctx, left_tysp);
+            if (left_tysp.type.kind == TY_NEVER) {
+                bool was_dead_code = ctx->is_dead_code;
+                ctx->is_dead_code = true;
+                right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                ctx->is_dead_code = was_dead_code;
+                // TODO: warn about dead code
+                require_subtype_of_int(ctx, right_tysp);
+                result_type = (struct type){ .kind = TY_NEVER };
+            } else if (left_tysp.type.kind == TY_CONST_INT) {
                 if (left_tysp.type.value == 0) {
                     // NOTE: LHS is statically false; compile RHS as dead code
                     bool was_dead_code = ctx->is_dead_code;
@@ -1782,55 +1792,50 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 } else {
                     // NOTE: LHS is statically true; compile the RHS
                     right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-                    switch (right_tysp.type.kind) {
-                    case TY_CONST_INT:
-                        // NOTE: RHS is a const int; return a const int
+                    require_subtype_of_int(ctx, right_tysp);
+                    if (right_tysp.type.kind == TY_NEVER) {
+                        result_type = (struct type){ .kind = TY_NEVER };
+                    } else if (right_tysp.type.kind == TY_CONST_INT) {
                         result_type = (struct type){ .kind = TY_CONST_INT, .value = (right_tysp.type.value != 0) };
-                        break;
-                    case TY_INT:
+                    } else if (right_tysp.type.kind == TY_INT) {
                         // NOTE: RHS is a non-const int; convert to boolean
-                        emit_int_to_bool(ctx);
+                        emit_not_equal_zero(ctx);
                         result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
-                        break;
-                    default: fail_expected_type_int(ctx, left_tysp);
+                    } else {
+                        assert(!"unreachable");
                     }
                 }
-                break;
-            case TY_INT: {
+            } else if (left_tysp.type.kind == TY_INT) {
                 size_t false_label = ctx->local_label_count++;
                 size_t done_label = ctx->local_label_count++;
-                // TODO: if statically true or false; unemit branch_if_zero
                 emit_local_forward_branch_if_zero(ctx, false_label);
                 right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-                switch (right_tysp.type.kind) {
-                case TY_CONST_INT:
-                    if (right_tysp.type.value == 0) {
-                        // NOTE: RHS is statically false; only emit the false case code
-                        emit_local_label(ctx, false_label);
-                        emit_push_int(ctx, 0);
-                    } else {
-                        // NOTE: RHS is statically true; skip the RHS's branch_if_zero
-                        emit_push_int(ctx, 1);
-                        emit_local_forward_branch(ctx, done_label);
-                        emit_local_label(ctx, false_label);
-                        emit_push_int(ctx, 0);
-                        emit_local_label(ctx, done_label);
-                    }
-                    break;
-                case TY_INT:
+                require_subtype_of_int(ctx, right_tysp);
+                if (right_tysp.type.kind == TY_NEVER
+                || (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value == 0)) {
+                    // NOTE: RHS is statically false (or never); only emit the false case code
+                    emit_local_label(ctx, false_label);
+                    emit_push_int(ctx, 0);
+                } else if (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value != 0) {
+                    // NOTE: RHS is statically true; skip the RHS's branch_if_zero
+                    emit_push_int(ctx, 1);
+                    emit_local_forward_branch(ctx, done_label);
+                    emit_local_label(ctx, false_label);
+                    emit_push_int(ctx, 0);
+                    emit_local_label(ctx, done_label);
+                } else if (right_tysp.type.kind == TY_INT) {
                     emit_local_forward_branch_if_zero(ctx, false_label);
                     emit_push_int(ctx, 1);
                     emit_local_forward_branch(ctx, done_label);
                     emit_local_label(ctx, false_label);
                     emit_push_int(ctx, 0);
                     emit_local_label(ctx, done_label);
-                    break;
-                default: fail_expected_type_int(ctx, right_tysp);
+                } else {
+                    assert(!"unreachable");
                 }
                 result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
-                break;
-            }
-            default: fail_expected_type_int(ctx, left_tysp);
+            } else {
+                assert(!"unreachable");
             }
             break;
         }
@@ -1839,15 +1844,27 @@ compile_expr(struct context *ctx, int min_binding_power) {
             result_type = require_subtype_coerce(ctx, left_tysp, right_tysp);
             break;
         }
-        default:
+        default: {
             require_subtype_of_int(ctx, left_tysp);
+            bool was_dead_code = ctx->is_dead_code;
+            if (left_tysp.type.kind == TY_NEVER) {
+                ctx->is_dead_code = true;
+            }
             right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+            ctx->is_dead_code = was_dead_code;
             require_subtype_of_int(ctx, right_tysp);
             struct span result_span = join_spans(left_tysp.span, right_tysp.span);
-            if (left_tysp.type.kind == TY_CONST_INT && right_tysp.type.kind == TY_CONST_INT) {
-                result_type = eval_const_binary_op(ctx, op, left_tysp, right_tysp, result_span);
+            if (left_tysp.type.kind == TY_NEVER) {
+                // TODO: warn about dead code
+                result_type = (struct type){ .kind = TY_NEVER };
+            } else if (right_tysp.type.kind == TY_NEVER) {
+                emit_drop_type(ctx, left_tysp.type.kind);
+                result_type = (struct type){ .kind = TY_NEVER };
+            } else if (left_tysp.type.kind == TY_CONST_INT && right_tysp.type.kind == TY_CONST_INT) {
+                result_type = eval_const_int_binary_op(ctx, op, left_tysp, right_tysp, result_span);
             } else {
                 bool swap = false;
+                // TODO: do we need to drop anything if one or both are TY_NEVER?
                 if (left_tysp.type.kind == TY_CONST_INT) {
                     left_tysp.type = require_subtype_coerce(ctx, left_tysp, right_tysp);
                     swap = true;
@@ -1859,6 +1876,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 emit_binary_op(ctx, op, left_tysp.type, right_tysp.type, swap);
             }
             break;
+        }
         }
         struct type_span result_tysp = {
             .type = result_type,
@@ -1875,8 +1893,10 @@ compile_if_expr(struct context *ctx) {
     take_token_expect_kind(ctx, &if_tok, TOKEN_KEYWORD_IF);
     struct type_span condition_tysp = compile_expr(ctx, 0);
     require_subtype_of_int(ctx, condition_tysp);
-    bool then_is_dead_code = condition_tysp.type.kind == TY_CONST_INT && condition_tysp.type.value == 0;
-    bool else_is_dead_code = condition_tysp.type.kind == TY_CONST_INT && condition_tysp.type.value != 0;
+    bool then_is_dead_code = condition_tysp.type.kind == TY_NEVER
+        || (condition_tysp.type.kind == TY_CONST_INT && condition_tysp.type.value == 0);
+    bool else_is_dead_code = condition_tysp.type.kind == TY_NEVER
+        || (condition_tysp.type.kind == TY_CONST_INT && condition_tysp.type.value != 0);
     // TODO: warn about dead code
     size_t false_label = ctx->local_label_count++;
     size_t done_label = ctx->local_label_count++;
@@ -1908,11 +1928,14 @@ compile_if_expr(struct context *ctx) {
     }
     emit_local_label(ctx, done_label);
     ctx->is_dead_code = was_dead_code;
+    if (condition_tysp.type.kind == TY_NEVER) {
+        result_type = (struct type){ .kind = TY_NEVER };
+    }
     return (struct type_span){ .type = result_type, .span = result_span };
 }
 
 static struct type
-eval_const_unary_op(struct context *ctx, enum UNARY_OP op, struct type operand, struct span span) {
+eval_const_int_unary_op(struct context *ctx, enum UNARY_OP op, struct type operand, struct span span) {
     assert(operand.kind == TY_CONST_INT);
     struct type result_type = { .kind = TY_CONST_INT };
     switch (op) {
@@ -1954,17 +1977,18 @@ compile_prefix_op_expr(struct context *ctx) {
     struct token op_tok;
     take_token(ctx, &op_tok);
     struct type_span expr_tysp = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
-    struct type result_type = { 0 };
+    require_subtype_of_int(ctx, expr_tysp);
     struct span result_span = { .start = op_tok.loc, .end = expr_tysp.span.end };
-    switch (expr_tysp.type.kind) {
-    case TY_CONST_INT:
-        result_type = eval_const_unary_op(ctx, op, expr_tysp.type, result_span);
-        break;
-    case TY_INT:
+    struct type result_type = { 0 };
+    if (expr_tysp.type.kind == TY_NEVER) {
+        result_type = (struct type){ .kind = TY_NEVER };
+    } else if (expr_tysp.type.kind == TY_CONST_INT) {
+        result_type = eval_const_int_unary_op(ctx, op, expr_tysp.type, result_span);
+    } else if (expr_tysp.type.kind == TY_INT) {
         result_type = calc_unary_op_type(ctx, op, expr_tysp);
         emit_unary_op(ctx, op);
-        break;
-    default: fail_expected_type_int(ctx, expr_tysp);
+    } else {
+        assert(!"unreachable");
     }
     return (struct type_span){ .type = result_type, .span = result_span };
 }
