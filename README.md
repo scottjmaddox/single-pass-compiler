@@ -104,11 +104,9 @@ reserved_number =
 - [x] test `if` dead code elim; both ways
 - [x] test deadcode elim after `__builtin_trap()` in middle of a block
 - [x] test `fail_invalid_type_for_arithmetic`
-- [ ] test `fail_expected_subtype`
-- [ ] test `fail_const_int_div_by_zero`
-- [ ] test `fail_const_int_rem_by_zero`
-- [ ] test const eval of `&&`, `||`, and `if`
-- [ ] test const eval of all other ops
+- [x] test `fail_const_int_div_by_zero`
+- [x] test `fail_const_int_rem_by_zero`
+- [ ] test assembly of `&&`, `||`, and `if` with consts
 - [ ] test parsing / emission of i64 minimum value
 - [ ] test that "0" { "0" } dec_literal is reserved
 - [ ] test that 0b0 has type `u1`
@@ -118,6 +116,7 @@ reserved_number =
 - [ ] test `-1:u1` fails
 - [ ] test `-1:i1` succeeds
 - [ ] test `2:u32 + 2:u32 == 4:u32` succeeds
+- [ ] rename `TY_CONST_FN` back to `TY_FN`
 - [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
   - `const` enforces that the result is compile-time known
   - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.

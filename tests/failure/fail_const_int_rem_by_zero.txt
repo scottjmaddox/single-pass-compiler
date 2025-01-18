@@ -1,0 +1,5 @@
+error: const integer remainder by zero:
+ --> tests/failure/fail_const_int_rem_by_zero.spl:2:9
+  |
+  |     1 % 0
+  |         ^
