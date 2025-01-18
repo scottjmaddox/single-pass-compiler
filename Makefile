@@ -1,5 +1,6 @@
 .PHONY: all clean test test-failure test-success
 
+TEST_ASSEMBLY_SPL_FILES := $(wildcard tests/assembly/*.spl)
 TEST_FAILURE_SPL_FILES := $(wildcard tests/failure/*.spl)
 TEST_SUCCESS_SPL_FILES := $(wildcard tests/success/*.spl)
 
@@ -20,7 +21,30 @@ spc: spc.c
 	clang --debug -std=c11 -pedantic -Wall -Wno-gnu-case-range -o $@ $<
 
 
-test: test-failure test-success
+test: test-assembly test-failure test-success
+
+
+test-assembly:
+	@echo "Running assembly tests..."
+	@FAIL=0; \
+	for SPL in $(TEST_ASSEMBLY_SPL_FILES); do \
+		TMP_OUT=$$(mktemp); \
+		OUT=$$(echo "$$SPL" | sed 's/\.[^.]*$$/.s/'); \
+		./spc -o $$TMP_OUT "$$SPL"; \
+		if cmp -s "$$TMP_OUT" "$$OUT"; then \
+			rm "$$TMP_OUT"; \
+		else \
+			echo "FAIL: writing expected output to '$$OUT'"; \
+			mv "$$TMP_OUT" "$$OUT"; \
+			FAIL=1; \
+		fi; \
+	done; \
+	if [ "$$FAIL" -eq 1 ]; then \
+		echo "One or more tests failed."; \
+		exit 1; \
+	else \
+		echo "Passed."; \
+	fi
 
 
 test-failure:

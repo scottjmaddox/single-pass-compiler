@@ -101,7 +101,7 @@ reserved_number =
   - [x] test every pair of CONST_INT, INT binary ops?
   - [x] test and fix ops applied to TY_NEVER
 - [x] test and fix `if v { __builtin_trap() } else { 1 }`
-- [ ] test deadcode elim after `__builtin_trap()` in middle of a block
+- [x] test deadcode elim after `__builtin_trap()` in middle of a block
 - [ ] add semicolons back?
   - needed to distinguish `let a = b - 0` from `let a = b;  -0`...
   - that's kinda dumb, though, since `let a = b;  -0` is useless outside of tests...

@@ -1059,7 +1059,7 @@ emit_drop_type(struct context *ctx, enum TY ty) {
         case TY_CONST_INT:
             break;
         // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
-        case TY_INT: fprintf(ctx->output_file, "\tadd\tsp, sp, #16\n; pop\n");
+        case TY_INT: fprintf(ctx->output_file, "\tadd\tsp, sp, #16\t; drop\n");
     }
 }
 
@@ -1074,7 +1074,7 @@ emit_load_var(struct context *ctx, int var_stack_offset) {
 static void
 emit_clear_reg(struct context *ctx, char *reg) {
     if (ctx->is_dead_code) { return; }
-    fprintf(ctx->output_file, "\tmov\t%s, #0\n", reg);
+    fprintf(ctx->output_file, "\tmov\t%s, #0\t; clear\n", reg);
 }
 
 static void
@@ -1455,8 +1455,8 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // TODO: push parameter symbols
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     struct type_span block_return_tysp = compile_block(ctx, false);
-    block_return_tysp.type = require_subtype_coerce(ctx, block_return_tysp, declared_return_tysp);
-    emit_fn_epilogue(ctx, block_return_tysp.type.kind);
+    struct type return_type = require_subtype_coerce(ctx, block_return_tysp, declared_return_tysp);
+    emit_fn_epilogue(ctx, return_type.kind);
     pop_scope(ctx);
 }
 

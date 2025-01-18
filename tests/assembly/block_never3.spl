@@ -1,0 +1,5 @@
+const main = fn() -> never {
+    1:i32
+    __builtin_trap()
+    1:i32
+}
