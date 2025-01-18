@@ -3,7 +3,7 @@
 TEST_FAILURE_SPL_FILES := $(wildcard tests/failure/*.spl)
 TEST_SUCCESS_SPL_FILES := $(wildcard tests/success/*.spl)
 
-TEST_SUCCESS_SPL_ASM_FILES := $(TEST_SUCCESS_SPL_FILES:.spl=-spl.s)
+TEST_SUCCESS_SPL_ASM_FILES := $(TEST_SUCCESS_SPL_FILES:.spl=.s)
 
 TEST_SUCCESS_EXECUTABLES := $(TEST_SUCCESS_SPL_ASM_FILES:.s=)
 
@@ -26,7 +26,7 @@ test: test-failure test-success
 test-failure:
 	@echo "Running failure tests..."
 	@FAIL=0; \
-	for SPL in tests/failure/*.spl; do \
+	for SPL in $(TEST_FAILURE_SPL_FILES); do \
 		TMP_OUT=$$(mktemp); \
 		OUT=$$(echo "$$SPL" | sed 's/\.[^.]*$$/.txt/'); \
 		./spc -o $$(mktemp) "$$SPL" >"$$TMP_OUT" 2>&1; \
@@ -58,10 +58,10 @@ test-success: $(TEST_SUCCESS_EXECUTABLES)
 		fi; \
 	done
 
-tests/success/%-spl: tests/success/%-spl.s
+tests/success/%: tests/success/%.s
 	clang -O0 --debug -o $@ $<
 
-tests/success/%-spl.s: tests/success/%.spl spc
+tests/success/%.s: tests/success/%.spl spc
 	./spc -o $@ $<
 
 tests/success/%.spl:

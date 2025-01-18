@@ -239,7 +239,8 @@ struct span {
 enum TY {
     TY_UNIT,
     TY_NEVER,
-    TY_FN,
+    TY_CONST_FN,
+    TY_CONST_INT,
     TY_INT,
 };
 
@@ -247,8 +248,10 @@ struct type {
     enum TY kind;
     union {
         // `arg_list` stores type constructor arguments.
-        // For TY_FN, that's the parameter types followed by the return type.
+        // For TY_CONST_FN, that's the parameter types followed by the return type.
         struct type_node *arg_list;
+        // For TY_CONST_INT, `value` stores the constant value.
+        __int128_t value;
         // For TY_INT, `bits` stores the number of bits.
         struct {
             bool sgnd; // true for signed, false for unsigned
@@ -306,6 +309,7 @@ struct context {
     int stack_offset; // current stack offset from the frame pointer in x29
     size_t local_label_count;
     struct scope_node *scope_stack;
+    bool is_dead_code;
 };
 
 ///////////
@@ -416,7 +420,7 @@ pop_scope(struct context *ctx) {
         struct symbol_node *node = scope->symbol_list;
         scope->symbol_list = node->next;
         struct type ty = node->sym.tysp.type;
-        if (ty.kind == TY_FN) {
+        if (ty.kind == TY_CONST_FN) {
             struct type_node *arg = ty.arg_list;
             while (arg != NULL) {
                 struct type_node *next = arg->next;
@@ -455,7 +459,7 @@ type_equals(struct type a, struct type b) {
     case TY_UNIT:
     case TY_NEVER:
         return true;
-    case TY_FN:
+    case TY_CONST_FN:
         {
             struct type_node *a_arg = a.arg_list;
             struct type_node *b_arg = b.arg_list;
@@ -466,6 +470,8 @@ type_equals(struct type a, struct type b) {
             }
             return a_arg == NULL && b_arg == NULL;
         }
+    case TY_CONST_INT:
+        return a.value == b.value;
     case TY_INT:
         return a.sgnd == b.sgnd && a.bits == b.bits;
     }
@@ -495,59 +501,50 @@ lex_number(struct context *ctx, struct token tok) {
     size_t i = tok.loc.idx;
     assert(i < len);
 
-    bool is_negative = false;
     bool has_digit = false;
     bool is_reserved = false;
-    if (src[i] == '-') {
-        is_negative = true;
-        i += 1;
-    }
     if (src[i] == '0' && i + 1 < len
     && (src[i + 1] == 'b' || src[i + 1] == 'o' || src[i + 1] == 'x')) {
         i += 1;
-        if (is_negative) {
-            is_reserved = true;
-        } else {
-            switch (src[i]) {
-            case 'b':
-                // binary literal
-                i += 1;
-                while (i < len) {
-                    switch (src[i]) {
-                    case '_': i += 1; continue;
-                    case '0' ... '1': i += 1; has_digit = true; continue;
-                    case '2' ... '9': i += 1; is_reserved = true; break;
-                    }
-                    break;
+        switch (src[i]) {
+        case 'b':
+            // binary literal
+            i += 1;
+            while (i < len) {
+                switch (src[i]) {
+                case '_': i += 1; continue;
+                case '0' ... '1': i += 1; has_digit = true; continue;
+                case '2' ... '9': i += 1; is_reserved = true; break;
                 }
                 break;
-            case 'o':
-                // octal literal
-                i += 1;
-                while (i < len) {
-                    switch (src[i]) {
-                    case '_': i += 1; continue;
-                    case '0' ... '7': i += 1; has_digit = true; continue;
-                    case '8' ... '9': i += 1; is_reserved = true; break;
-                    }
-                    break;
-                }
-                break;
-            case 'x':
-                // hexadecimal literal
-                i += 1;
-                while (i < len) {
-                    switch (src[i]) {
-                    case '_': i += 1; continue;
-                    case '0' ... '9':
-                    case 'A' ... 'F':
-                    case 'a' ... 'f': i += 1; has_digit = true; continue;
-                    }
-                    break;
-                }
-                break;
-            default: assert(!"unreachable");
             }
+            break;
+        case 'o':
+            // octal literal
+            i += 1;
+            while (i < len) {
+                switch (src[i]) {
+                case '_': i += 1; continue;
+                case '0' ... '7': i += 1; has_digit = true; continue;
+                case '8' ... '9': i += 1; is_reserved = true; break;
+                }
+                break;
+            }
+            break;
+        case 'x':
+            // hexadecimal literal
+            i += 1;
+            while (i < len) {
+                switch (src[i]) {
+                case '_': i += 1; continue;
+                case '0' ... '9':
+                case 'A' ... 'F':
+                case 'a' ... 'f': i += 1; has_digit = true; continue;
+                }
+                break;
+            }
+            break;
+        default: assert(!"unreachable");
         }
     } else {
         // decimal literal
@@ -622,7 +619,6 @@ lex(struct context *ctx) {
             if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
                 case '>': tok.kind = TOKEN_RIGHT_ARROW; tok.len = 2; return tok;
-                case '0' ... '9': return lex_number(ctx, tok);
                 }
             }
             tok.kind = TOKEN_MINUS;
@@ -802,7 +798,8 @@ eprint_type(struct type ty) {
     switch (ty.kind) {
     case TY_UNIT: fprintf(stderr, "unit"); break;
     case TY_NEVER: fprintf(stderr, "never"); break;
-    case TY_FN: assert(!"not implemented"); break; // TODO: implement
+    case TY_CONST_FN: assert(!"not implemented"); break; // TODO: implement
+    case TY_CONST_INT: fprintf(stderr, "const int"); break;
     case TY_INT:
         if (ty.sgnd) {
             fprintf(stderr, "i%hu", ty.bits);
@@ -929,19 +926,6 @@ fail_expected_type_int(struct context *ctx, struct type_span actual) {
 }
 
 static void
-fail_branch_type_mismatch(struct context *ctx, struct type_span expected, struct type_span actual) {
-    fprintf(stderr, "error: branch type mismatch between `");
-    eprint_type(expected.type);
-    fprintf(stderr, "` from:\n");
-    eprint_span(ctx, expected.span);
-    fprintf(stderr, "  and `");
-    eprint_type(actual.type);
-    fprintf(stderr, "` from:\n");
-    eprint_span(ctx, actual.span);
-    exit(EXIT_FAILURE);
-}
-
-static void
 fail_incompatible_binary_op_types(struct context *ctx, enum BINARY_OP op, struct type_span left, struct type_span right) {
     // TODO: incorporate `op` into the error message
     fprintf(stderr, "error: bitwise operation type mismatch between `");
@@ -994,10 +978,24 @@ fail_if_without_else_non_unit(struct context *ctx, struct type_span then) {
 }
 
 static void
-fail_int_literal_out_of_range(struct context *ctx, struct token tok) {
-    fprintf(stderr, "error: integer literal out of range\n");
-    eprint_span(ctx, token_span(ctx, tok));
-    fprintf(stderr, "  expected range: -2⁶³ to 2⁶⁴ - 1\n");
+fail_const_int_out_of_range(struct context *ctx, struct span span) {
+    fprintf(stderr, "error: const integer out of range:\n");
+    eprint_span(ctx, span);
+    fprintf(stderr, "  expected range: -2¹²⁷ to 2¹²⁷ - 1\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_const_int_div_by_zero(struct context *ctx, struct span span) {
+    fprintf(stderr, "error: const integer division by zero:\n");
+    eprint_span(ctx, span);
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_const_int_rem_by_zero(struct context *ctx, struct span span) {
+    fprintf(stderr, "error: const integer remainder by zero:\n");
+    eprint_span(ctx, span);
     exit(EXIT_FAILURE);
 }
 
@@ -1019,6 +1017,7 @@ take_token_expect_kind(struct context *ctx, struct token *tok_out, enum TOKEN to
 
 static void
 emit_program_prologue(struct context *ctx) {
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file,
         "\t.section\t__TEXT,__text,regular,pure_instructions\n"
     );
@@ -1026,39 +1025,47 @@ emit_program_prologue(struct context *ctx) {
 
 static void
 emit_program_epilogue(struct context *ctx) {
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "\n.subsections_via_symbols\n");
 }
 
 static void
 emit_comment(struct context *ctx, char *comment) {
-    // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "\t; %s\n", comment);
 }
 
 static void
 emit_push(struct context *ctx, char *reg) {
+    if (ctx->is_dead_code) { return; }
     // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
     fprintf(ctx->output_file, "\tstr\t%s, [sp, #-16]!\t; push\n", reg);
 }
 
 static void
 emit_pop(struct context *ctx, char *reg) {
+    if (ctx->is_dead_code) { return; }
     // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
     fprintf(ctx->output_file, "\tldr\t%s, [sp], #16\t; pop\n", reg);
 }
 
 static void
 emit_drop_type(struct context *ctx, enum TY ty) {
+    if (ctx->is_dead_code) { return; }
     switch (ty) {
         case TY_UNIT:
-        case TY_NEVER: break;
-        case TY_FN:
+        case TY_NEVER:
+        case TY_CONST_FN:
+        case TY_CONST_INT:
+            break;
+        // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
         case TY_INT: fprintf(ctx->output_file, "\tadd\tsp, sp, #16\n; pop\n");
     }
 }
 
 static void
 emit_load_var(struct context *ctx, int var_stack_offset) {
+    if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "load var");
     fprintf(ctx->output_file, "\tldr\tx0, [x29, #%d]\n", var_stack_offset);
     emit_push(ctx, "x0");
@@ -1066,11 +1073,13 @@ emit_load_var(struct context *ctx, int var_stack_offset) {
 
 static void
 emit_clear_reg(struct context *ctx, char *reg) {
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "\tmov\t%s, #0\n", reg);
 }
 
 static void
 emit_fn_prologue(struct context *ctx, struct str name) {
+    if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "fn prologue");
     fprintf(ctx->output_file,
         "\t.globl\t_%.*s\n"
@@ -1088,11 +1097,15 @@ emit_fn_prologue(struct context *ctx, struct str name) {
 
 static void
 emit_fn_epilogue(struct context *ctx, enum TY return_type) {
+    if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "pop return value");
     switch (return_type) {
     case TY_UNIT:
-    case TY_NEVER: emit_clear_reg(ctx, "x0"); break;
-    case TY_FN:
+    case TY_NEVER:
+        emit_clear_reg(ctx, "x0"); break;
+    case TY_CONST_FN:
+    case TY_CONST_INT:
+        assert(!"unreachable"); break;
     case TY_INT: emit_pop(ctx, "x0"); break;
     }
     emit_comment(ctx, "fn epilogue");
@@ -1107,49 +1120,64 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
 
 static void
 emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TY return_type) {
+    if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "fn call");
     fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
     switch (return_type) {
         case TY_UNIT:
         case TY_NEVER: break;
-        case TY_FN:
+        case TY_CONST_FN:
+        case TY_CONST_INT: assert(!"unreachable");
         case TY_INT: emit_push(ctx, "x0"); break;
     }
 }
 
 static void
 emit_local_label(struct context *ctx, size_t label) {
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "%zu:\n", label);
 }
 
 static void
 emit_local_forward_branch(struct context *ctx, size_t label) {
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "\tb\t%zuf\n", label);
 }
 
 static void
 emit_local_forward_branch_if_zero(struct context *ctx, size_t label) {
+    if (ctx->is_dead_code) { return; }
     emit_pop(ctx, "x0");
     fprintf(ctx->output_file, "\tcbz\tx0, %zuf\n", label);
 }
 
 static void
 emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label) {
+    if (ctx->is_dead_code) { return; }
     emit_pop(ctx, "x0");
     fprintf(ctx->output_file, "\tcbnz\tx0, %zuf\n", label);
 }
 
 static void
-emit_type_coersion(struct context *ctx, struct type from, struct type to) {
-    if (type_equals(from, to)) { return; }
-    if (from.kind != TY_INT || to.kind != TY_INT) {
-        assert(!"not implemented"); // TODO: implement
-    }
-    // NOTE: currently, nothing to do, since all integers are stored in 64 bits
+emit_push_int(struct context *ctx, uint64_t value) {
+    if (ctx->is_dead_code) { return; }
+    // push the value onto the stack
+    fprintf(ctx->output_file, "\tldr\tx0, =0x%llx\n", value);
+    emit_push(ctx, "x0");
+}
+
+static void
+emit_int_to_bool(struct context *ctx) {
+    if (ctx->is_dead_code) { return; }
+    emit_comment(ctx, "int to bool");
+    emit_pop(ctx, "x0");
+    fprintf(ctx->output_file, "\tcmp\tx0, #0\n\tcset\tx0, ne\n");
+    emit_push(ctx, "x0");
 }
 
 static void
 emit_unary_op(struct context *ctx, enum UNARY_OP op) {
+    if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "unary op");
     emit_pop(ctx, "x0");
     switch (op) {
@@ -1162,13 +1190,19 @@ emit_unary_op(struct context *ctx, enum UNARY_OP op) {
 }
 
 static void
-emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct type right) {
+emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct type right, bool swap) {
+    if (ctx->is_dead_code) { return; }
     // TODO: abort on wrapping with standard operators
     // TODO: add explicit wrapping and saturating operators
     emit_comment(ctx, "binary op");
     assert(left.kind == TY_INT && right.kind == TY_INT);
-    emit_pop(ctx, "x1");
-    emit_pop(ctx, "x0");
+    if (swap) {
+        emit_pop(ctx, "x0");
+        emit_pop(ctx, "x1");
+    } else {
+        emit_pop(ctx, "x1");
+        emit_pop(ctx, "x0");
+    }
     switch (op) {
     case BINARY_OP_TYPE_ANNO: assert(!"unreachable");
     case BINARY_OP_MUL: fprintf(ctx->output_file, "\tmul\tx0, x0, x1\n"); break;
@@ -1219,15 +1253,8 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
 }
 
 static void
-emit_int_literal(struct context *ctx, uint64_t value) {
-    // push the literal onto the stack
-    emit_comment(ctx, "int literal");
-    fprintf(ctx->output_file, "\tldr\tx0, =0x%llx\n", value);
-    emit_push(ctx, "x0");
-}
-
-static void
 emit_builtin_trap(struct context *ctx) {
+    if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "\tbrk\t#0\n");
 }
 
@@ -1236,9 +1263,17 @@ emit_builtin_trap(struct context *ctx) {
 ///////////////////////
 
 static void
-require_type_int(struct context *ctx, struct type_span tysp) {
-    if (tysp.type.kind == TY_INT) { return; }
-    fail_expected_type_int(ctx, tysp);
+require_subtype_of_int(struct context *ctx, struct type_span tysp) {
+    if (tysp.type.kind == TY_CONST_INT || tysp.type.kind == TY_INT) { return; }
+    switch (tysp.type.kind) {
+    case TY_UNIT:
+    case TY_CONST_FN:
+        fail_expected_type_int(ctx, tysp);
+    case TY_NEVER:
+    case TY_CONST_INT:
+    case TY_INT:
+        return;
+    }
 }
 
 static bool
@@ -1247,15 +1282,41 @@ is_subtype(struct type left, struct type right) {
     // - every value that A can represent is representable by B, and
     // - type A supports all the operations that type B supports
     switch (left.kind) {
-    case TY_UNIT: if (right.kind == TY_UNIT) { return true; }
+    case TY_UNIT: if (right.kind == TY_UNIT) { return true; } break;
     case TY_NEVER: return true;
-    case TY_FN: if (right.kind == TY_FN) {
-        assert(!"not implemented"); // TODO: implement
-    }
-    case TY_INT: if (right.kind == TY_INT) {
-        if (left.sgnd == right.sgnd && left.bits <= right.bits) { return true; }
-        if (!left.sgnd && left.bits < right.bits) { return true; }
-    }
+    case TY_CONST_FN:
+        if (right.kind == TY_CONST_FN) {
+            assert(!"not implemented"); // TODO: implement
+        }
+        break;
+    case TY_CONST_INT:
+        if (right.kind == TY_CONST_INT) { return true; }
+        if (right.kind == TY_INT) {
+            if (!right.sgnd && left.value < 0) { return false; }
+            // TODO: check if the constant is within the bounds of the integer type
+            __int128 tmp_value = left.value;
+            unsigned int bits = 0;
+            if (tmp_value < 0) {
+                while (tmp_value != -1) { tmp_value >>= 1; bits++; }
+                if (bits == 0) { bits = 1; }
+                assert(right.sgnd);
+                if (bits <= right.bits) { return true; }
+            } else {
+                while (tmp_value != 0) { tmp_value >>= 1; bits++; }
+                if (right.sgnd) {
+                    if (bits < right.bits) { return true; }
+                } else {
+                    if (bits <= right.bits) { return true; }
+                }
+            }
+        }
+        break;
+    case TY_INT:
+        if (right.kind == TY_INT) {
+            if (left.sgnd == right.sgnd && left.bits <= right.bits) { return true; }
+            if (!left.sgnd && left.bits < right.bits) { return true; }
+        }
+        break;
     }
     return false;
 }
@@ -1265,6 +1326,25 @@ require_subtype(struct context *ctx, struct type_span left, struct type_span rig
     if (!is_subtype(left.type, right.type)) {
         fail_expected_subtype(ctx, left, right);
     }
+}
+
+static struct type
+require_subtype_coerce(struct context *ctx, struct type_span from, struct type_span to) {
+    if (type_equals(from.type, to.type)) { return to.type; }
+    require_subtype(ctx, from, to);
+    switch (from.type.kind) {
+    case TY_UNIT:
+    case TY_NEVER:
+    case TY_CONST_FN:
+        break;
+    case TY_CONST_INT:
+        if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
+        break;
+    case TY_INT:
+        // NOTE: currently, no code to emit, since all integers are stored in 64 bits
+        break;
+    }
+    return to.type;
 }
 
 static void compile_program(struct context *ctx);
@@ -1365,7 +1445,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     struct span fn_span = (struct span){ .start = fn_tok.loc, .end = declared_return_tysp.span.end };
     struct type_node *fn_arg_list = alloc_type_node(ctx);
     *fn_arg_list = (struct type_node){ .next = NULL, .tysp = declared_return_tysp };
-    struct type_span fn_tysp = { .type = { .kind = TY_FN, .arg_list = fn_arg_list }, .span = fn_span };
+    struct type_span fn_tysp = { .type = { .kind = TY_CONST_FN, .arg_list = fn_arg_list }, .span = fn_span };
     struct symbol fn_sym = { .ident_tok = *name_tok, .tysp = fn_tysp };
     // TODO: check for an existing definition or a conflicting forward declaration
     push_symbol(ctx, fn_sym);
@@ -1374,7 +1454,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     // TODO: push parameter symbols
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     struct type_span block_return_tysp = compile_block(ctx, false);
-    require_subtype(ctx, block_return_tysp, declared_return_tysp);
+    block_return_tysp.type = require_subtype_coerce(ctx, block_return_tysp, declared_return_tysp);
     emit_fn_epilogue(ctx, block_return_tysp.type.kind);
     pop_scope(ctx);
 }
@@ -1394,10 +1474,23 @@ compile_let_expr(struct context *ctx) {
     struct type_span expr_tysp = compile_expr(ctx, 0);
     if (str_equals(token_str(ctx, name_tok), WILDCARD_STR)) {
         emit_drop_type(ctx, expr_tysp.type.kind);
-    } else {
-        ctx->stack_offset -= 16;
-        struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp, .var_stack_offset = ctx->stack_offset };
-        push_symbol(ctx, var_sym);
+    } else  {
+        switch (expr_tysp.type.kind) {
+        case TY_UNIT:
+        case TY_NEVER:
+        case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
+        case TY_CONST_INT: {
+            struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp };
+            push_symbol(ctx, var_sym);
+            break;
+        }
+        case TY_INT: {
+            ctx->stack_offset -= 16;
+            struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp, .var_stack_offset = ctx->stack_offset };
+            push_symbol(ctx, var_sym);
+            break;
+        }
+        }
     }
     struct span let_span = { .start = let_tok.loc, .end = expr_tysp.span.end };
     struct type_span return_tysp = { .type = { .kind = TY_UNIT }, .span = let_span };
@@ -1412,9 +1505,15 @@ compile_var_expr(struct context *ctx) {
     struct str name_str = token_str(ctx, name_tok);
     struct symbol_node *sym_node = find_symbol_node(ctx, name_str);
     if (sym_node == NULL) { fail_undefined_var(ctx, name_tok); }
-    emit_load_var(ctx, sym_node->sym.var_stack_offset);
-    // TODO: emit load instruction
-    return sym_node->sym.tysp;
+    struct type result_type = sym_node->sym.tysp.type;
+    switch (result_type.kind) {
+    case TY_UNIT:
+    case TY_NEVER:
+    case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
+    case TY_CONST_INT: break;
+    case TY_INT: emit_load_var(ctx, sym_node->sym.var_stack_offset); break;
+    }
+    return (struct type_span){ .type = result_type, .span = token_span(ctx, name_tok) };
 }
 
 static struct type_span
@@ -1423,30 +1522,82 @@ compile_block(struct context *ctx, bool create_scope) {
     if (create_scope) { push_scope(ctx); }
     struct token left_brace_tok;
     take_token_expect_kind(ctx, &left_brace_tok, TOKEN_LEFT_BRACE);
-    struct type_span final_return_tysp = { .type = { .kind = TY_UNIT }};
+    struct type_span result_tysp = { .type = { .kind = TY_UNIT } };
     struct token right_brace_tok;
+    bool was_dead_code = ctx->is_dead_code;
     if (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
-        struct type_span previous_return_tysp = compile_expr(ctx, 0);
-        final_return_tysp = previous_return_tysp;
+        result_tysp = compile_expr(ctx, 0);
         while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
-            emit_drop_type(ctx, previous_return_tysp.type.kind);
-            struct type_span return_type = compile_expr(ctx, 0);
-            previous_return_tysp = final_return_tysp;
-            if (final_return_tysp.type.kind != TY_NEVER) {
-                final_return_tysp = return_type;
+            if (result_tysp.type.kind == TY_NEVER) {
+                // TODO: warn about dead code
+                ctx->is_dead_code = true;
+                while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
+                    compile_expr(ctx, 0);
+                }
+            } else {
+                emit_drop_type(ctx, result_tysp.type.kind);
+                result_tysp = compile_expr(ctx, 0);
             }
-            // TODO: on TY_NEVER, warn on dead code
-        }
-        if (final_return_tysp.type.kind == TY_NEVER) {
-            emit_drop_type(ctx, previous_return_tysp.type.kind);
         }
         take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);
     } else {
         take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);
+        result_tysp.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
     }
-    final_return_tysp.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
+    ctx->is_dead_code = was_dead_code;
+    // TODO: chain of spans for how a type was derived?
+    // result_tysp.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
     if (create_scope) { pop_scope(ctx); }
-    return final_return_tysp;
+    return result_tysp;
+}
+
+static struct type
+eval_const_binary_op(struct context *ctx, enum BINARY_OP op, struct type_span left, struct type_span right, struct span span) {
+    assert(left.type.kind == TY_CONST_INT && right.type.kind == TY_CONST_INT);
+    struct type result_type = { .kind = TY_CONST_INT };
+    switch (op) {
+    case BINARY_OP_TYPE_ANNO: assert(!"unreachable");
+    case BINARY_OP_MUL:
+        if (__builtin_mul_overflow(left.type.value, right.type.value, &result_type.value)) {
+            fail_const_int_out_of_range(ctx, span);
+        }
+        break;
+    case BINARY_OP_DIV:
+        if (right.type.value == 0) { fail_const_int_div_by_zero(ctx, right.span); }
+        result_type.value = left.type.value / right.type.value;
+        break;
+    case BINARY_OP_REM:
+        if (right.type.value == 0) { fail_const_int_rem_by_zero(ctx, right.span); }
+        result_type.value = left.type.value % right.type.value;
+        break;
+    case BINARY_OP_ADD:
+        if (__builtin_add_overflow(left.type.value, right.type.value, &result_type.value)) {
+            fail_const_int_out_of_range(ctx, span);
+        }
+        break;
+    case BINARY_OP_SUB:
+        if (__builtin_sub_overflow(left.type.value, right.type.value, &result_type.value)) {
+            fail_const_int_out_of_range(ctx, span);
+        }
+        break;
+    case BINARY_OP_SHL:
+        // TODO: check for overflow
+        result_type.value = left.type.value << right.type.value;
+        break;
+    case BINARY_OP_SHR: result_type.value = left.type.value >> right.type.value; break;
+    case BINARY_OP_LT: result_type.value = left.type.value < right.type.value; break;
+    case BINARY_OP_LE: result_type.value = left.type.value <= right.type.value; break;
+    case BINARY_OP_GT: result_type.value = left.type.value > right.type.value; break;
+    case BINARY_OP_GE: result_type.value = left.type.value >= right.type.value; break;
+    case BINARY_OP_EQ: result_type.value = left.type.value == right.type.value; break;
+    case BINARY_OP_NE: result_type.value = left.type.value != right.type.value; break;
+    case BINARY_OP_BITWISE_AND: result_type.value = left.type.value & right.type.value; break;
+    case BINARY_OP_BITWISE_XOR: result_type.value = left.type.value ^ right.type.value; break;
+    case BINARY_OP_BITWISE_OR: result_type.value = left.type.value | right.type.value; break;
+    case BINARY_OP_LOGICAL_AND: assert(!"unreachable");
+    case BINARY_OP_LOGICAL_OR: assert(!"unreachable");
+    }
+    return result_type;
 }
 
 static struct type
@@ -1482,15 +1633,14 @@ calc_binary_op_type(struct context *ctx, enum BINARY_OP op, struct type_span lef
             fail_incompatible_binary_op_types(ctx, op, left, right);
         }
         return left.type;
-    case BINARY_OP_LOGICAL_AND:
-    case BINARY_OP_LOGICAL_OR:
-        return (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
+    case BINARY_OP_LOGICAL_AND: assert(!"unreachable");
+    case BINARY_OP_LOGICAL_OR: assert(!"unreachable");
     }
 }
 
 static struct type_span
 compile_expr(struct context *ctx, int min_binding_power) {
-    // EBNF: expr = block | if_expr | let_expr | "(" expr ")" | [ "-" ] int_literal | fn_call | var_expr | op_expr ;
+    // EBNF: expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
     struct type_span left_tysp = { 0 };
     struct type_span right_tysp = { 0 };
     switch (peek_token_kind(ctx)) {
@@ -1552,50 +1702,162 @@ compile_expr(struct context *ctx, int min_binding_power) {
         struct type result_type = { 0 };
         switch (op) {
         case BINARY_OP_LOGICAL_OR: {
-            require_type_int(ctx, left_tysp);
-            size_t true_label = ctx->local_label_count++;
-            size_t done_label = ctx->local_label_count++;
-            emit_local_forward_branch_if_nonzero(ctx, true_label);
-            right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-            require_type_int(ctx, right_tysp);
-            result_type = calc_binary_op_type(ctx, op, left_tysp, right_tysp);
-            emit_local_forward_branch_if_nonzero(ctx, true_label);
-            emit_int_literal(ctx, 0);
-            emit_local_forward_branch(ctx, done_label);
-            emit_local_label(ctx, true_label);
-            emit_int_literal(ctx, 1);
-            emit_local_label(ctx, done_label);
+            switch (left_tysp.type.kind) {
+            case TY_CONST_INT:
+                if (left_tysp.type.value != 0) {
+                    // NOTE: LHS is statically true; compile RHS as dead code
+                    bool was_dead_code = ctx->is_dead_code;
+                    ctx->is_dead_code = true;
+                    right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                    ctx->is_dead_code = was_dead_code;
+                    // TODO: warn about dead code
+                    require_subtype_of_int(ctx, right_tysp);
+                    result_type = (struct type){ .kind = TY_CONST_INT, .value = 1 };
+                } else {
+                    // NOTE: LHS is statically false; compile the RHS
+                    right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                    switch (right_tysp.type.kind) {
+                    case TY_CONST_INT:
+                        // NOTE: RHS is a const int; return a const int
+                        result_type = (struct type){ .kind = TY_CONST_INT, .value = (right_tysp.type.value != 0) };
+                        break;
+                    case TY_INT:
+                        // NOTE: RHS is a non-const int; convert to u1
+                        emit_int_to_bool(ctx);
+                        result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
+                        break;
+                    default: fail_expected_type_int(ctx, left_tysp);
+                    }
+                }
+                break;
+            case TY_INT: {
+                size_t true_label = ctx->local_label_count++;
+                size_t done_label = ctx->local_label_count++;
+                emit_local_forward_branch_if_nonzero(ctx, true_label);
+                right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                switch (right_tysp.type.kind) {
+                case TY_CONST_INT:
+                    if (right_tysp.type.value != 0) {
+                        // NOTE: RHS is statically true; only emit the true case code
+                        emit_local_label(ctx, true_label);
+                        emit_push_int(ctx, 1);
+                    } else {
+                        // NOTE: RHS is statically false; skip the RHS's branch_if_nonzero
+                        emit_push_int(ctx, 0);
+                        emit_local_forward_branch(ctx, done_label);
+                        emit_local_label(ctx, true_label);
+                        emit_push_int(ctx, 1);
+                        emit_local_label(ctx, done_label);
+                    }
+                    break;
+                case TY_INT:
+                    emit_local_forward_branch_if_nonzero(ctx, true_label);
+                    emit_push_int(ctx, 0);
+                    emit_local_forward_branch(ctx, done_label);
+                    emit_local_label(ctx, true_label);
+                    emit_push_int(ctx, 1);
+                    emit_local_label(ctx, done_label);
+                    break;
+                default: fail_expected_type_int(ctx, right_tysp);
+                }
+                result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
+                break;
+            }
+            default: fail_expected_type_int(ctx, left_tysp);
+            }
             break;
         }
         case BINARY_OP_LOGICAL_AND: {
-            require_type_int(ctx, left_tysp);
-            size_t false_label = ctx->local_label_count++;
-            size_t done_label = ctx->local_label_count++;
-            emit_local_forward_branch_if_zero(ctx, false_label);
-            right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-            require_type_int(ctx, right_tysp);
-            result_type = calc_binary_op_type(ctx, op, left_tysp, right_tysp);
-            emit_local_forward_branch_if_zero(ctx, false_label);
-            emit_int_literal(ctx, 1);
-            emit_local_forward_branch(ctx, done_label);
-            emit_local_label(ctx, false_label);
-            emit_int_literal(ctx, 0);
-            emit_local_label(ctx, done_label);
+            switch (left_tysp.type.kind) {
+            case TY_CONST_INT:
+                if (left_tysp.type.value == 0) {
+                    // NOTE: LHS is statically false; compile RHS as dead code
+                    bool was_dead_code = ctx->is_dead_code;
+                    ctx->is_dead_code = true;
+                    right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                    ctx->is_dead_code = was_dead_code;
+                    // TODO: warn about dead code
+                    require_subtype_of_int(ctx, right_tysp);
+                    result_type = (struct type){ .kind = TY_CONST_INT, .value = 0 };
+                } else {
+                    // NOTE: LHS is statically true; compile the RHS
+                    right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                    switch (right_tysp.type.kind) {
+                    case TY_CONST_INT:
+                        // NOTE: RHS is a const int; return a const int
+                        result_type = (struct type){ .kind = TY_CONST_INT, .value = (right_tysp.type.value != 0) };
+                        break;
+                    case TY_INT:
+                        // NOTE: RHS is a non-const int; convert to boolean
+                        emit_int_to_bool(ctx);
+                        result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
+                        break;
+                    default: fail_expected_type_int(ctx, left_tysp);
+                    }
+                }
+                break;
+            case TY_INT: {
+                size_t false_label = ctx->local_label_count++;
+                size_t done_label = ctx->local_label_count++;
+                // TODO: if statically true or false; unemit branch_if_zero
+                emit_local_forward_branch_if_zero(ctx, false_label);
+                right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
+                switch (right_tysp.type.kind) {
+                case TY_CONST_INT:
+                    if (right_tysp.type.value == 0) {
+                        // NOTE: RHS is statically false; only emit the false case code
+                        emit_local_label(ctx, false_label);
+                        emit_push_int(ctx, 0);
+                    } else {
+                        // NOTE: RHS is statically true; skip the RHS's branch_if_zero
+                        emit_push_int(ctx, 1);
+                        emit_local_forward_branch(ctx, done_label);
+                        emit_local_label(ctx, false_label);
+                        emit_push_int(ctx, 0);
+                        emit_local_label(ctx, done_label);
+                    }
+                    break;
+                case TY_INT:
+                    emit_local_forward_branch_if_zero(ctx, false_label);
+                    emit_push_int(ctx, 1);
+                    emit_local_forward_branch(ctx, done_label);
+                    emit_local_label(ctx, false_label);
+                    emit_push_int(ctx, 0);
+                    emit_local_label(ctx, done_label);
+                    break;
+                default: fail_expected_type_int(ctx, right_tysp);
+                }
+                result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
+                break;
+            }
+            default: fail_expected_type_int(ctx, left_tysp);
+            }
             break;
         }
         case BINARY_OP_TYPE_ANNO: {
             right_tysp = parse_type(ctx);
-            require_subtype(ctx, left_tysp, right_tysp);
-            result_type = right_tysp.type;
-            emit_type_coersion(ctx, left_tysp.type, right_tysp.type);
+            result_type = require_subtype_coerce(ctx, left_tysp, right_tysp);
             break;
         }
         default:
-            require_type_int(ctx, left_tysp);
+            require_subtype_of_int(ctx, left_tysp);
             right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
-            require_type_int(ctx, right_tysp);
-            result_type = calc_binary_op_type(ctx, op, left_tysp, right_tysp);
-            emit_binary_op(ctx, op, left_tysp.type, right_tysp.type);
+            require_subtype_of_int(ctx, right_tysp);
+            struct span result_span = join_spans(left_tysp.span, right_tysp.span);
+            if (left_tysp.type.kind == TY_CONST_INT && right_tysp.type.kind == TY_CONST_INT) {
+                result_type = eval_const_binary_op(ctx, op, left_tysp, right_tysp, result_span);
+            } else {
+                bool swap = false;
+                if (left_tysp.type.kind == TY_CONST_INT) {
+                    left_tysp.type = require_subtype_coerce(ctx, left_tysp, right_tysp);
+                    swap = true;
+                }
+                if (right_tysp.type.kind == TY_CONST_INT) {
+                    right_tysp.type = require_subtype_coerce(ctx, right_tysp, left_tysp);
+                }
+                result_type = calc_binary_op_type(ctx, op, left_tysp, right_tysp);
+                emit_binary_op(ctx, op, left_tysp.type, right_tysp.type, swap);
+            }
             break;
         }
         struct type_span result_tysp = {
@@ -1612,14 +1874,22 @@ compile_if_expr(struct context *ctx) {
     struct token if_tok;
     take_token_expect_kind(ctx, &if_tok, TOKEN_KEYWORD_IF);
     struct type_span condition_tysp = compile_expr(ctx, 0);
-    require_type_int(ctx, condition_tysp);
+    require_subtype_of_int(ctx, condition_tysp);
+    bool then_is_dead_code = condition_tysp.type.kind == TY_CONST_INT && condition_tysp.type.value == 0;
+    bool else_is_dead_code = condition_tysp.type.kind == TY_CONST_INT && condition_tysp.type.value != 0;
+    // TODO: warn about dead code
     size_t false_label = ctx->local_label_count++;
     size_t done_label = ctx->local_label_count++;
+    bool was_dead_code = ctx->is_dead_code;
+    ctx->is_dead_code = was_dead_code | then_is_dead_code | else_is_dead_code;
     emit_local_forward_branch_if_zero(ctx, false_label);
+    ctx->is_dead_code = was_dead_code | then_is_dead_code;
     struct type_span then_tysp = compile_block(ctx, true);
+    ctx->is_dead_code = was_dead_code | else_is_dead_code;
     emit_local_forward_branch(ctx, done_label);
     emit_local_label(ctx, false_label);
-    struct type_span return_tysp = { 0 };
+    struct type result_type = then_tysp.type;
+    struct span result_span = then_tysp.span;
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
         struct token else_tok;
         take_token_expect_kind(ctx, &else_tok, TOKEN_KEYWORD_ELSE);
@@ -1629,24 +1899,36 @@ compile_if_expr(struct context *ctx) {
         } else {
             else_tysp = compile_block(ctx, true);
         }
-        if (!type_equals(then_tysp.type, else_tysp.type)
-        && then_tysp.type.kind != TY_NEVER && else_tysp.type.kind != TY_NEVER) {
-            fail_branch_type_mismatch(ctx, then_tysp, else_tysp);
-        }
-        struct span if_span = { .start = if_tok.loc, .end = else_tysp.span.end };
-        return_tysp = then_tysp;
-        return_tysp.span = if_span;
+        // TODO: improve error message if not a subtype
+        require_subtype_coerce(ctx, else_tysp, then_tysp);
+    } else if (!is_subtype(then_tysp.type, (struct type){ .kind = TY_UNIT })) {
+        fail_if_without_else_non_unit(ctx, then_tysp);
     } else {
-        switch (then_tysp.type.kind) {
-        case TY_UNIT:
-        case TY_NEVER: break;
-        default: fail_if_without_else_non_unit(ctx, then_tysp);
-        }
-        struct span if_span = { .start = if_tok.loc, .end = then_tysp.span.end };
-        return_tysp = (struct type_span){ .type = { .kind = TY_UNIT }, .span = if_span };
+        result_type = (struct type){ .kind = TY_UNIT };
     }
     emit_local_label(ctx, done_label);
-    return return_tysp;
+    ctx->is_dead_code = was_dead_code;
+    return (struct type_span){ .type = result_type, .span = result_span };
+}
+
+static struct type
+eval_const_unary_op(struct context *ctx, enum UNARY_OP op, struct type operand, struct span span) {
+    assert(operand.kind == TY_CONST_INT);
+    struct type result_type = { .kind = TY_CONST_INT };
+    switch (op) {
+    case UNARY_OP_NEG:
+        if (__builtin_sub_overflow(0, operand.value, &result_type.value)) {
+            fail_const_int_out_of_range(ctx, span);
+        }
+        break;
+    case UNARY_OP_BITWISE_NOT:
+        result_type.value = ~operand.value;
+        break;
+    case UNARY_OP_LOGICAL_NOT:
+        result_type.value = !operand.value;
+        break;
+    }
+    return result_type;
 }
 
 static struct type
@@ -1654,47 +1936,37 @@ calc_unary_op_type(struct context *ctx, enum UNARY_OP op, struct type_span tysp)
     assert(tysp.type.kind == TY_INT);
     switch (op) {
     case UNARY_OP_NEG:
-    case UNARY_OP_BITWISE_NOT:
-        return tysp.type;
+    case UNARY_OP_BITWISE_NOT: return tysp.type;
     case UNARY_OP_LOGICAL_NOT: return (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
     }
 }
 
 static struct type_span
 compile_prefix_op_expr(struct context *ctx) {
-    // EBNF: prefix_op = "!" | "-" ;
-    struct token op_tok;
-    struct type_span expr_tysp = { 0 };
-    struct type_span result_tysp = { 0 };
+    // EBNF: prefix_op = "-" | "~" | "!" ;
+    enum UNARY_OP op;
     switch (peek_token_kind(ctx)) {
-    case TOKEN_MINUS:
-        take_token_expect_kind(ctx, &op_tok, TOKEN_MINUS);
-        expr_tysp = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
-        require_type_int(ctx, expr_tysp);
-        struct type result_type = calc_unary_op_type(ctx, UNARY_OP_NEG, expr_tysp);
-        emit_unary_op(ctx, UNARY_OP_NEG);
-        result_tysp.type = result_type;
-        break;
-    case TOKEN_TILDE: {
-        take_token_expect_kind(ctx, &op_tok, TOKEN_TILDE);
-        expr_tysp = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_BITWISE_NOT]);
-        require_type_int(ctx, expr_tysp);
-        struct type result_type = calc_unary_op_type(ctx, UNARY_OP_BITWISE_NOT, expr_tysp);
-        emit_unary_op(ctx, UNARY_OP_BITWISE_NOT);
-        result_tysp.type = result_type;
-        } break;
-    case TOKEN_EXCLAMATION: {
-        take_token_expect_kind(ctx, &op_tok, TOKEN_EXCLAMATION);
-        expr_tysp = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_LOGICAL_NOT]);
-        require_type_int(ctx, expr_tysp);
-        struct type result_type = calc_unary_op_type(ctx, UNARY_OP_LOGICAL_NOT, expr_tysp);
-        emit_unary_op(ctx, UNARY_OP_LOGICAL_NOT);
-        result_tysp.type = result_type;
-        } break;
+    case TOKEN_MINUS:       op = UNARY_OP_NEG;         break;
+    case TOKEN_TILDE:       op = UNARY_OP_BITWISE_NOT; break;
+    case TOKEN_EXCLAMATION: op = UNARY_OP_LOGICAL_NOT; break;
     default: assert(!"unreachable");
     }
-    result_tysp.span = (struct span){ .start = op_tok.loc, .end = expr_tysp.span.end };
-    return result_tysp;
+    struct token op_tok;
+    take_token(ctx, &op_tok);
+    struct type_span expr_tysp = compile_expr(ctx, UNARY_OP_RIGHT_BINDING_POWERS[UNARY_OP_NEG]);
+    struct type result_type = { 0 };
+    struct span result_span = { .start = op_tok.loc, .end = expr_tysp.span.end };
+    switch (expr_tysp.type.kind) {
+    case TY_CONST_INT:
+        result_type = eval_const_unary_op(ctx, op, expr_tysp.type, result_span);
+        break;
+    case TY_INT:
+        result_type = calc_unary_op_type(ctx, op, expr_tysp);
+        emit_unary_op(ctx, op);
+        break;
+    default: fail_expected_type_int(ctx, expr_tysp);
+    }
+    return (struct type_span){ .type = result_type, .span = result_span };
 }
 
 static struct type_span
@@ -1718,7 +1990,7 @@ compile_fn_call(struct context *ctx) {
     struct symbol_node *fn_sym_node = find_symbol_node(ctx, name_str);
     if (fn_sym_node == NULL) { fail_undefined_fn(ctx, name_tok); }
     struct type_span fn_tysp = fn_sym_node->sym.tysp;
-    if (fn_tysp.type.kind != TY_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_sym_node->sym.ident_tok, fn_tysp); }
+    if (fn_tysp.type.kind != TY_CONST_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_sym_node->sym.ident_tok, fn_tysp); }
     // TODO: check argument types against parameter types
     struct type_node *return_type_node = fn_tysp.type.arg_list;
     for (; return_type_node->next != NULL; return_type_node = return_type_node->next) {}
@@ -1728,14 +2000,12 @@ compile_fn_call(struct context *ctx) {
     return return_tysp;
 }
 
-static uint64_t
-parse_int_literal(struct context *ctx, struct token tok, struct type_span expected_tysp) {
+static __int128
+parse_int_literal(struct context *ctx, struct token tok) {
     __int128 value = 0;
     char *src = ctx->src + tok.loc.idx;
     size_t len = tok.len;
     size_t i = 0;
-    bool sgnd = false;
-    int bits = 0;
     if (src[i] == '0' && i + 1 < len
     && (src[i + 1] == 'b' || src[i + 1] == 'o' || src[i + 1] == 'x')) {
         switch (src[i + 1]) {
@@ -1743,14 +2013,13 @@ parse_int_literal(struct context *ctx, struct token tok, struct type_span expect
             // binary literal
             for (i += 2; i < len; i++) {
                 if (src[i] == '_') { continue; }
-                bits += 1;
                 if (__builtin_mul_overflow(value, 2, &value)) {
-                    fail_int_literal_out_of_range(ctx, tok);
+                    fail_const_int_out_of_range(ctx, token_span(ctx, tok));
                 }
                 char digit = src[i] - '0';
                 assert(digit < 2);
                 if (__builtin_add_overflow(value, digit, &value)) {
-                    fail_int_literal_out_of_range(ctx, tok);
+                    fail_const_int_out_of_range(ctx, token_span(ctx, tok));
                 }
             }
             break;
@@ -1758,14 +2027,13 @@ parse_int_literal(struct context *ctx, struct token tok, struct type_span expect
             // octal literal
             for (i += 2; i < len; i++) {
                 if (src[i] == '_') { continue; }
-                bits += 3;
                 if (__builtin_mul_overflow(value, 8, &value)) {
-                    fail_int_literal_out_of_range(ctx, tok);
+                    fail_const_int_out_of_range(ctx, token_span(ctx, tok));
                 }
                 char digit = src[i] - '0';
                 assert(digit < 8);
                 if (__builtin_add_overflow(value, digit, &value)) {
-                    fail_int_literal_out_of_range(ctx, tok);
+                    fail_const_int_out_of_range(ctx, token_span(ctx, tok));
                 }
             }
             break;
@@ -1773,9 +2041,8 @@ parse_int_literal(struct context *ctx, struct token tok, struct type_span expect
             // hexadecimal literal
             for (i += 2; i < len; i++) {
                 if (src[i] == '_') { continue; }
-                bits += 4;
                 if (__builtin_mul_overflow(value, 16, &value)) {
-                    fail_int_literal_out_of_range(ctx, tok);
+                    fail_const_int_out_of_range(ctx, token_span(ctx, tok));
                 }
                 char digit;
                 if (src[i] >= '0' && src[i] <= '9') {
@@ -1789,7 +2056,7 @@ parse_int_literal(struct context *ctx, struct token tok, struct type_span expect
                 }
                 assert(digit < 16);
                 if (__builtin_add_overflow(value, digit, &value)) {
-                    fail_int_literal_out_of_range(ctx, tok);
+                    fail_const_int_out_of_range(ctx, token_span(ctx, tok));
                 }
             }
             break;
@@ -1797,52 +2064,29 @@ parse_int_literal(struct context *ctx, struct token tok, struct type_span expect
         }
     } else {
         // decimal literal
-        if (src[i] == '-') { sgnd = true; i++; }
         for (; i < len; i++) {
             if (src[i] == '_') { continue; }
             if (__builtin_mul_overflow(value, 10, &value)) {
-                fail_int_literal_out_of_range(ctx, tok);
+                fail_const_int_out_of_range(ctx, token_span(ctx, tok));
             }
             char digit = src[i] - '0';
             assert(digit < 10);
             if (__builtin_add_overflow(value, digit, &value)) {
-                fail_int_literal_out_of_range(ctx, tok);
+                fail_const_int_out_of_range(ctx, token_span(ctx, tok));
             }
-        }
-        if (sgnd) {
-            if (__builtin_sub_overflow(0, value, &value)) {
-                fail_int_literal_out_of_range(ctx, tok);
-            }
-        }
-        __int128 tmp_value = value;
-        if (value < 0) {
-            while (tmp_value != -1) { tmp_value >>= 1; bits++; }
-            if (bits == 0) { bits = 1; }
-        } else {
-            while (tmp_value != 0) { tmp_value >>= 1; bits++; }
         }
     }
-    struct type_span actual_tysp = {
-        .type = { .kind = TY_INT, .sgnd = sgnd, .bits = bits },
-        .span = token_span(ctx, tok) };
-    require_subtype(ctx, actual_tysp, expected_tysp);
-    return (uint64_t)value;
+    return value;
 }
 
 static struct type_span
 compile_int_literal(struct context *ctx) {
     struct token tok;
     take_token_expect_kind(ctx, &tok, TOKEN_INT_LITERAL);
-    // NOTE: default to i64 if no type annotation is provided
-    struct type_span result_tysp = { .type = { .kind = TY_INT, .sgnd = true, .bits = 64 }, .span = token_span(ctx, tok) };
-    if (peek_token_kind(ctx) == TOKEN_COLON) {
-        take_token_expect_kind(ctx, NULL, TOKEN_COLON);
-        struct type_span anno_tysp = parse_type(ctx);
-        result_tysp.type = anno_tysp.type;
-        result_tysp.span = join_spans(result_tysp.span, anno_tysp.span);
-    }
-    uint64_t value = parse_int_literal(ctx, tok, result_tysp);
-    emit_int_literal(ctx, value);
+    __int128 value = parse_int_literal(ctx, tok);
+    struct type_span result_tysp = {
+        .type = { .kind = TY_CONST_INT, .value = value },
+        .span = token_span(ctx, tok) };
     return result_tysp;
 }
 

@@ -29,7 +29,7 @@ op_expr = prefix_op expr | expr infix_op expr ;
 
 ident = alpha { alphanumeric } ;
 int_literal = dec_literal | bin_literal | oct_literal | hex_literal ;
-dec_literal = [ "-" ] dec_digit { "_" | dec_digit } ;
+dec_literal = dec_digit { "_" | dec_digit } ;
 bin_literal = "0b" { "_" | bin_digit } bin_digit { "_" | bin_digit } ;
 oct_literal = "0o" { "_" | oct_digit } oct_digit { "_" | oct_digit } ;
 hex_literal = "0x" { "_" | hex_digit } hex_digit { "_" | hex_digit } ;
@@ -41,7 +41,7 @@ oct_digit = "0" .. "7" ;
 dec_digit = "0" .. "9" ;
 hex_digit = "0" .. "9" | "a" .. "f" | "A" .. "F" ;
 
-prefix_op = "-" | "!" | "~" ;
+prefix_op = "-" | "~" | "!" ;
 infix_op = "*" | "/" | "%" | "+" | "-" | "<<" | ">>"
          | "<" | "<=" | ">" | ">=" | "==" | "!=" | "&&"  | "||" ;
 
@@ -52,7 +52,6 @@ The following lexical forms that ambiguously resemble valid number literals are 
 
 ```ebnf
 reserved_number =
-                | "-0b" | "-0o" | "-0x"
                 | "0" dec_literal
                 | bin_literal ( "2" .. "9" )
                 | oct_literal ( "8" .. "9" )
@@ -92,12 +91,34 @@ reserved_number =
 - [x] default to i64, and always use 64-bit ops, for now
 - [x] inline type annotation / coersion
 - [x] add `let _ =` as explicit drop
-- [ ] const int types with compile-time evaluation of ops between two constants
-  - the type is/contains the integer value
+- [x] const int types with compile-time evaluation of const ops
+  - [x] fix nesting of live code within dead code; need `ctx->is_dead_code = was_dead_code | is_dead_code` instead of just `ctx->is_dead_code = is_dead_code`
+  - [x] fix trap on `if (1:i64 <= 0) { __builtin_trap() }`
+  - [x] fix `if` without else returning TY_NEVER; should be TY_UNIT always
+  - [x] hoist `require_subtype,emit_type_coersion,.type =` pattern into a helpr
+  - [x] fix `error: expected an integer type, not const int:` on `0 && __builtin_trap()`
+  - [x] fix `error: expected an integer type, not const int:` on `1 || __builtin_trap()`
+  - [ ] test every pair of CONST_INT, INT binary ops?
+  - [ ] audit all failure test error messages
+- [ ] test and fix `if v { __builtin_trap() } else { 1 }`
+  - we'll need to unify the types, rather than just calling `require_subtype_coerce`.
+- [ ] test deadcode elim after `__builtin_trap()` in middle of a block
+- [ ] add semicolons back?
+  - needed to distinguish `let a = b - 0` from `let a = b;  -0`...
+  - that's kinda dumb, though, since `let a = b;  -0` is useless outside of tests...
+  - maybe we can just check for this and provide a helpful error message?
+- [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
+  - `const` enforces that the result is compile-time known
+  - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.
+  - `const if` enforces that only one branch's code is emitted (but all are parsed / type checked)
+  - `const for` can be used for compile-time loop unrolling
 - [ ] test `fail_invalid_type_for_arithmetic`
 - [ ] test `fail_expected_subtype`
+- [ ] test `fail_const_int_div_by_zero`
+- [ ] test `fail_const_int_rem_by_zero`
+- [ ] test const eval of `&&`, `||`, and `if`
+- [ ] test const eval of all other ops
 - [ ] test parsing / emission of i64 minimum value
-- [ ] test that "-0b" | "-0o" | "-0x" are reserved
 - [ ] test that "0" { "0" } dec_literal is reserved
 - [ ] test that 0b0 has type `u1`
 - [ ] test that 0o0 has type `u3`
@@ -106,6 +127,7 @@ reserved_number =
 - [ ] test `-1:u1` fails
 - [ ] test `-1:i1` succeeds
 - [ ] test `2:u32 + 2:u32 == 4:u32` succeeds
+- [ ] test `if` dead code elim; both ways
 
 
 - [ ] measure test coverage
@@ -113,11 +135,15 @@ reserved_number =
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte-slice string literals, i.e. `b"Hello"`
-- [ ] nullable and non-nullable pointer types, with coersion
-- [ ] up to 8 (single-word) function parameters (i.e. passed via registers)
+- [ ] up to 8 (single-word) function (in) parameters (i.e. passed via registers)
+- [ ] inout (`name: <->type`) and out (`name: ->type`) parameters
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
   - e.g. `const write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
-- [ ] reserve builtin type idents
+- [ ] nullable and non-nullable pointer types, with coersion
+  - we'll need them eventually, but perhaps not yet?
+  - and perhaps we'll only allow dereferencing in an `unsafe` block?
+- [ ] reserve builtin type idents, e.g. `unit`, `never`, `u1`-`u64`, `i1`-`i64`
+- [ ] rename types to start with capital letter?
 - [ ] add line numbers to error messages
 - [ ] support multi-line span error messages
 - [ ] explicit tail calls?
@@ -133,7 +159,6 @@ reserved_number =
 - [ ] copy, move, drop methods
 - [ ] automatic type promotion?
 - [ ] reference types?
-- [ ] named return slots a la go? with uninitialized tracking
 - [ ] local `const`
 - [ ] `const` def aliases
 - [ ] `const` def returns symbol to allow chained defs?

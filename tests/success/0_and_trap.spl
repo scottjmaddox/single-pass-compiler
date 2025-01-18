@@ -1,0 +1,4 @@
+const main = fn() {
+    0 && __builtin_trap()
+    {}
+}

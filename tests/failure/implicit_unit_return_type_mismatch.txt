@@ -1,8 +1,8 @@
-error: expected type `i64` from:
- --> tests/failure/implicit_unit_return_type_mismatch.spl:1:19
+error: expected type `const int` from:
+ --> tests/failure/implicit_unit_return_type_mismatch.spl:1:21
   |
   | const main = fn() { 0 }
-  |                   ^^^^^
+  |                     ^
   to be a subtype of type `unit` from:
  --> tests/failure/implicit_unit_return_type_mismatch.spl:1:18
   |

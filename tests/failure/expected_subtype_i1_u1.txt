@@ -1,8 +1,8 @@
 error: expected type `i1` from:
- --> tests/failure/expected_subtype_i1_u1.spl:2:25
+ --> tests/failure/expected_subtype_i1_u1.spl:2:27
   |
   | const main = fn() -> u1 { foo() }
-  |                         ^^^^^^^^^
+  |                           ^^^^^
   to be a subtype of type `u1` from:
  --> tests/failure/expected_subtype_i1_u1.spl:2:22
   |

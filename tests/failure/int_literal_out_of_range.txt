@@ -1,6 +1,6 @@
-error: integer literal out of range
+error: const integer out of range:
  --> tests/failure/int_literal_out_of_range.spl:1:21
   |
   | const main = fn() { 9999999999999999999999999999999999999999 }
   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  expected range: -2⁶³ to 2⁶⁴ - 1
+  expected range: -2¹²⁷ to 2¹²⁷ - 1

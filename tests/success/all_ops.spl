@@ -1,0 +1,119 @@
+const zero = fn() -> i64 { 0 }
+const one = fn() -> i64 { 1 }
+
+const unary_const_int = fn() {
+    (-0)
+    ~0
+    !0
+    {}
+}
+
+const unary_int = fn() {
+    let z = zero()
+    (-z)
+    ~z
+    !z
+    {}
+}
+
+const const_int_binary_op_const_int = fn() {
+    0 *  0
+    0 /  1
+    0 %  1
+    0 +  0
+    0 -  0
+    0 << 0
+    0 >> 0
+    0 <  0
+    0 <= 0
+    0 >  0
+    0 >= 0
+    0 == 0
+    0 != 0
+    0 &  0
+    0 ^  0
+    0 |  0
+    0 && 0
+    0 || 0
+    {}
+}
+
+const const_int_binary_op_int = fn() {
+    let z = zero()
+    let o = one()
+    0 *  z
+    0 /  o
+    0 %  o
+    0 +  z
+    0 -  z
+    0 << z
+    0 >> z
+    0 <  z
+    0 <= z
+    0 >  z
+    0 >= z
+    0 == z
+    0 != z
+    0 &  z
+    0 ^  z
+    0 |  z
+    0 && z
+    0 || z
+    {}
+}
+
+const int_binary_op_const_int = fn() {
+    let z = zero()
+    z *  0
+    z /  1
+    z %  1
+    z +  0
+    z -  0
+    z << 0
+    z >> 0
+    z <  0
+    z <= 0
+    z >  0
+    z >= 0
+    z == 0
+    z != 0
+    z &  0
+    z ^  0
+    z |  0
+    z && 0
+    z || 0
+    {}
+}
+
+const int_binary_op_int = fn() {
+    let z = zero()
+    let o = one()
+    z *  z
+    z /  o
+    z %  o
+    z +  z
+    z -  z
+    z << z
+    z >> z
+    z <  z
+    z <= z
+    z >  z
+    z >= z
+    z == z
+    z != z
+    z &  z
+    z ^  z
+    z |  z
+    z && z
+    z || z
+    {}
+}
+
+const main = fn() {
+    unary_const_int()
+    unary_int()
+    const_int_binary_op_const_int()
+    const_int_binary_op_int()
+    int_binary_op_const_int()
+    int_binary_op_int()
+}
