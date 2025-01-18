@@ -100,9 +100,7 @@ reserved_number =
   - [x] fix `error: expected an integer type, not const int:` on `1 || __builtin_trap()`
   - [x] test every pair of CONST_INT, INT binary ops?
   - [x] test and fix ops applied to TY_NEVER
-  - [ ] `bool is_const` on type?
-- [ ] test and fix `if v { __builtin_trap() } else { 1 }`
-  - we'll need to unify the types, rather than just calling `require_subtype_coerce`.
+- [x] test and fix `if v { __builtin_trap() } else { 1 }`
 - [ ] test deadcode elim after `__builtin_trap()` in middle of a block
 - [ ] add semicolons back?
   - needed to distinguish `let a = b - 0` from `let a = b;  -0`...

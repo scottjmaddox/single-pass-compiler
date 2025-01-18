@@ -1228,7 +1228,10 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
         break;
     case BINARY_OP_ADD: fprintf(ctx->output_file, "\tadd\tx0, x0, x1\n"); break;
     case BINARY_OP_SUB: fprintf(ctx->output_file, "\tsub\tx0, x0, x1\n"); break;
-    case BINARY_OP_SHL: fprintf(ctx->output_file, "\tlsl\tx0, x0, x1\n"); break;
+    case BINARY_OP_SHL:
+        fprintf(ctx->output_file, "\tlsl\tx0, x0, x1\n");
+        // TODO: mask overflow? or abort?
+        break;
     case BINARY_OP_SHR:
         if (left.sgnd) {
             fprintf(ctx->output_file, "\tasr\tx0, x0, x1\n");
@@ -1332,16 +1335,17 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     if (type_equals(from.type, to.type)) { return to.type; }
     require_subtype(ctx, from, to);
     switch (from.type.kind) {
-    case TY_UNIT: return (struct type){ .kind = TY_UNIT };
-    case TY_NEVER: return (struct type){ .kind = TY_NEVER };
+    case TY_UNIT: break;
+    case TY_NEVER: break;
     case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
     case TY_CONST_INT:
         if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
-        return to.type;
+         break;
     case TY_INT:
         // NOTE: currently, no code to emit, since all integers are stored in 64 bits
-        return to.type;
+         break;
     }
+    return to.type;
 }
 
 static void compile_program(struct context *ctx);
@@ -1905,11 +1909,11 @@ compile_if_expr(struct context *ctx) {
     emit_local_forward_branch_if_zero(ctx, false_label);
     ctx->is_dead_code = was_dead_code | then_is_dead_code;
     struct type_span then_tysp = compile_block(ctx, true);
-    ctx->is_dead_code = was_dead_code | else_is_dead_code;
+    ctx->is_dead_code = was_dead_code | then_is_dead_code | else_is_dead_code;
     emit_local_forward_branch(ctx, done_label);
     emit_local_label(ctx, false_label);
-    struct type result_type = then_tysp.type;
-    struct span result_span = then_tysp.span;
+    ctx->is_dead_code = was_dead_code | else_is_dead_code;
+    struct type_span result_tysp = then_tysp;
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
         struct token else_tok;
         take_token_expect_kind(ctx, &else_tok, TOKEN_KEYWORD_ELSE);
@@ -1919,19 +1923,26 @@ compile_if_expr(struct context *ctx) {
         } else {
             else_tysp = compile_block(ctx, true);
         }
-        // TODO: improve error message if not a subtype
-        require_subtype_coerce(ctx, else_tysp, then_tysp);
-    } else if (!is_subtype(then_tysp.type, (struct type){ .kind = TY_UNIT })) {
-        fail_if_without_else_non_unit(ctx, then_tysp);
+        if (then_tysp.type.kind == TY_NEVER) {
+            result_tysp = else_tysp;
+        } else {
+            // TODO: improve error message if not a subtype
+            require_subtype_coerce(ctx, else_tysp, then_tysp);
+        }
     } else {
-        result_type = (struct type){ .kind = TY_UNIT };
+        if (!is_subtype(then_tysp.type, (struct type){ .kind = TY_UNIT })) {
+            fail_if_without_else_non_unit(ctx, then_tysp);
+        }
+        result_tysp.type = (struct type){ .kind = TY_UNIT };
+        result_tysp.span = (struct span){ .start = if_tok.loc, .end = then_tysp.span.end };
     }
+    ctx->is_dead_code = was_dead_code | then_is_dead_code | else_is_dead_code;
     emit_local_label(ctx, done_label);
     ctx->is_dead_code = was_dead_code;
     if (condition_tysp.type.kind == TY_NEVER) {
-        result_type = (struct type){ .kind = TY_NEVER };
+        result_tysp = condition_tysp;
     }
-    return (struct type_span){ .type = result_type, .span = result_span };
+    return result_tysp;
 }
 
 static struct type

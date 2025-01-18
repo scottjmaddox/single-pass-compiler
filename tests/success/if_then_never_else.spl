@@ -1,0 +1,5 @@
+const foo = fn() -> u1 { 0 }
+
+const main = fn() -> i32 {
+    if foo() { __builtin_trap() } else { 0 }
+}
