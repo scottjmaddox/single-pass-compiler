@@ -1,0 +1,6 @@
+error: invalid type for `+` operator `u1` from:
+ --> tests/failure/fail_invalid_type_for_arithmetic_left.spl:2:5
+  |
+  |     1:u1 + 1:i64
+  |     ^^^^
+  note: the `+` operator currently only supports `u64`, and `i64`.

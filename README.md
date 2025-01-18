@@ -101,17 +101,9 @@ reserved_number =
   - [x] test every pair of CONST_INT, INT binary ops?
   - [x] test and fix ops applied to TY_NEVER
 - [x] test and fix `if v { __builtin_trap() } else { 1 }`
+- [x] test `if` dead code elim; both ways
 - [x] test deadcode elim after `__builtin_trap()` in middle of a block
-- [ ] add semicolons back?
-  - needed to distinguish `let a = b - 0` from `let a = b;  -0`...
-  - that's kinda dumb, though, since `let a = b;  -0` is useless outside of tests...
-  - maybe we can just check for this and provide a helpful error message?
-- [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
-  - `const` enforces that the result is compile-time known
-  - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.
-  - `const if` enforces that only one branch's code is emitted (but all are parsed / type checked)
-  - `const for` can be used for compile-time loop unrolling
-- [ ] test `fail_invalid_type_for_arithmetic`
+- [x] test `fail_invalid_type_for_arithmetic`
 - [ ] test `fail_expected_subtype`
 - [ ] test `fail_const_int_div_by_zero`
 - [ ] test `fail_const_int_rem_by_zero`
@@ -126,7 +118,15 @@ reserved_number =
 - [ ] test `-1:u1` fails
 - [ ] test `-1:i1` succeeds
 - [ ] test `2:u32 + 2:u32 == 4:u32` succeeds
-- [ ] test `if` dead code elim; both ways
+- [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
+  - `const` enforces that the result is compile-time known
+  - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.
+  - `const if` enforces that only one branch's code is emitted (but all are parsed / type checked)
+  - `const for` can be used for compile-time loop unrolling
+- [ ] add semicolons back?
+  - needed to distinguish `let a = b - 0` from `let a = b (-0)`...
+  - that's kinda dumb, though, since `let a = b (-0)` is useless outside of tests...
+  - maybe we can just check for this and provide a helpful error message?
 
 
 - [ ] measure test coverage
