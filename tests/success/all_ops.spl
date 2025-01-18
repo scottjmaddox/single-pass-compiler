@@ -1,117 +1,111 @@
 const zero = fn() -> i64 { 0 }
 const one = fn() -> i64 { 1 }
 
-const unary_const_int = fn() {
-    (-0)
-    ~0
-    !0
-    {}
+const unary_op_const_int = fn() {
+    if (-0) !=  0 { __builtin_trap() }
+    if (~0) != -1 { __builtin_trap() }
+    if (!0) !=  1 { __builtin_trap() }
 }
 
-const unary_int = fn() {
+const unary_op_int = fn() {
     let z = zero()
-    (-z)
-    ~z
-    !z
-    {}
+    if (-z) !=  0 { __builtin_trap() }
+    if (~z) != -1 { __builtin_trap() }
+    if (!z) !=  1 { __builtin_trap() }
 }
 
 const const_int_binary_op_const_int = fn() {
-    0 *  0
-    0 /  1
-    0 %  1
-    0 +  0
-    0 -  0
-    0 << 0
-    0 >> 0
-    0 <  0
-    0 <= 0
-    0 >  0
-    0 >= 0
-    0 == 0
-    0 != 0
-    0 &  0
-    0 ^  0
-    0 |  0
-    0 && 0
-    0 || 0
-    {}
+    if (0 *  0) != 0 { __builtin_trap() }
+    if (0 /  1) != 0 { __builtin_trap() }
+    if (0 %  1) != 0 { __builtin_trap() }
+    if (0 +  0) != 0 { __builtin_trap() }
+    if (0 -  0) != 0 { __builtin_trap() }
+    if (0 << 0) != 0 { __builtin_trap() }
+    if (0 >> 0) != 0 { __builtin_trap() }
+    if (0 <  0) != 0 { __builtin_trap() }
+    if (0 <= 0) != 1 { __builtin_trap() }
+    if (0 >  0) != 0 { __builtin_trap() }
+    if (0 >= 0) != 1 { __builtin_trap() }
+    if (0 == 0) != 1 { __builtin_trap() }
+    if (0 != 0) != 0 { __builtin_trap() }
+    if (0 &  0) != 0 { __builtin_trap() }
+    if (0 ^  0) != 0 { __builtin_trap() }
+    if (0 |  0) != 0 { __builtin_trap() }
+    if (0 && 0) != 0 { __builtin_trap() }
+    if (0 || 0) != 0 { __builtin_trap() }
 }
 
 const const_int_binary_op_int = fn() {
     let z = zero()
     let o = one()
-    0 *  z
-    0 /  o
-    0 %  o
-    0 +  z
-    0 -  z
-    0 << z
-    0 >> z
-    0 <  z
-    0 <= z
-    0 >  z
-    0 >= z
-    0 == z
-    0 != z
-    0 &  z
-    0 ^  z
-    0 |  z
-    0 && z
-    0 || z
-    {}
+    if (0 *  z) != 0 { __builtin_trap() }
+    if (0 /  o) != 0 { __builtin_trap() }
+    if (0 %  o) != 0 { __builtin_trap() }
+    if (0 +  z) != 0 { __builtin_trap() }
+    if (0 -  z) != 0 { __builtin_trap() }
+    if (0 << z) != 0 { __builtin_trap() }
+    if (0 >> z) != 0 { __builtin_trap() }
+    if (0 <  z) != 0 { __builtin_trap() }
+    if (0 <= z) != 1 { __builtin_trap() }
+    if (0 >  z) != 0 { __builtin_trap() }
+    if (0 >= z) != 1 { __builtin_trap() }
+    if (0 == z) != 1 { __builtin_trap() }
+    if (0 != z) != 0 { __builtin_trap() }
+    if (0 &  z) != 0 { __builtin_trap() }
+    if (0 ^  z) != 0 { __builtin_trap() }
+    if (0 |  z) != 0 { __builtin_trap() }
+    if (0 && z) != 0 { __builtin_trap() }
+    if (0 || z) != 0 { __builtin_trap() }
 }
 
 const int_binary_op_const_int = fn() {
     let z = zero()
-    z *  0
-    z /  1
-    z %  1
-    z +  0
-    z -  0
-    z << 0
-    z >> 0
-    z <  0
-    z <= 0
-    z >  0
-    z >= 0
-    z == 0
-    z != 0
-    z &  0
-    z ^  0
-    z |  0
-    z && 0
-    z || 0
-    {}
+    if (z *  0) != 0 { __builtin_trap() }
+    if (z /  1) != 0 { __builtin_trap() }
+    if (z %  1) != 0 { __builtin_trap() }
+    if (z +  0) != 0 { __builtin_trap() }
+    if (z -  0) != 0 { __builtin_trap() }
+    if (z << 0) != 0 { __builtin_trap() }
+    if (z >> 0) != 0 { __builtin_trap() }
+    if (z <  0) != 0 { __builtin_trap() }
+    if (z <= 0) != 1 { __builtin_trap() }
+    if (z >  0) != 0 { __builtin_trap() }
+    if (z >= 0) != 1 { __builtin_trap() }
+    if (z == 0) != 1 { __builtin_trap() }
+    if (z != 0) != 0 { __builtin_trap() }
+    if (z &  0) != 0 { __builtin_trap() }
+    if (z ^  0) != 0 { __builtin_trap() }
+    if (z |  0) != 0 { __builtin_trap() }
+    if (z && 0) != 0 { __builtin_trap() }
+    if (z || 0) != 0 { __builtin_trap() }
 }
 
 const int_binary_op_int = fn() {
     let z = zero()
     let o = one()
-    z *  z
-    z /  o
-    z %  o
-    z +  z
-    z -  z
-    z << z
-    z >> z
-    z <  z
-    z <= z
-    z >  z
-    z >= z
-    z == z
-    z != z
-    z &  z
-    z ^  z
-    z |  z
-    z && z
-    z || z
-    {}
+    if (z *  z) != 0 { __builtin_trap() }
+    if (z /  o) != 0 { __builtin_trap() }
+    if (z %  o) != 0 { __builtin_trap() }
+    if (z +  z) != 0 { __builtin_trap() }
+    if (z -  z) != 0 { __builtin_trap() }
+    if (z << z) != 0 { __builtin_trap() }
+    if (z >> z) != 0 { __builtin_trap() }
+    if (z <  z) != 0 { __builtin_trap() }
+    if (z <= z) != 1 { __builtin_trap() }
+    if (z >  z) != 0 { __builtin_trap() }
+    if (z >= z) != 1 { __builtin_trap() }
+    if (z == z) != 1 { __builtin_trap() }
+    if (z != z) != 0 { __builtin_trap() }
+    if (z &  z) != 0 { __builtin_trap() }
+    if (z ^  z) != 0 { __builtin_trap() }
+    if (z |  z) != 0 { __builtin_trap() }
+    if (z && z) != 0 { __builtin_trap() }
+    if (z || z) != 0 { __builtin_trap() }
 }
 
 const main = fn() {
-    unary_const_int()
-    unary_int()
+    unary_op_const_int()
+    unary_op_int()
     const_int_binary_op_const_int()
     const_int_binary_op_int()
     int_binary_op_const_int()

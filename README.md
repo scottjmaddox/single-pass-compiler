@@ -98,8 +98,9 @@ reserved_number =
   - [x] hoist `require_subtype,emit_type_coersion,.type =` pattern into a helpr
   - [x] fix `error: expected an integer type, not const int:` on `0 && __builtin_trap()`
   - [x] fix `error: expected an integer type, not const int:` on `1 || __builtin_trap()`
-  - [ ] test every pair of CONST_INT, INT binary ops?
+  - [x] test every pair of CONST_INT, INT binary ops?
   - [ ] audit all failure test error messages
+  - [ ] any op applied to TY_NEVER should return TY_NEVER?
 - [ ] test and fix `if v { __builtin_trap() } else { 1 }`
   - we'll need to unify the types, rather than just calling `require_subtype_coerce`.
 - [ ] test deadcode elim after `__builtin_trap()` in middle of a block
