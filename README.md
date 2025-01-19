@@ -112,13 +112,10 @@ reserved_number =
 - [x] fix: non-const if should not return TY_CONST_INT
 - [x] test parsing / emission of i64 minimum value
 - [x] test that `"0" dec_literal` is reserved
-- [ ] test that 0b0 has type `u1`
-- [ ] test that 0o0 has type `u3`
-- [ ] test that 0x0 has type `u4`
-- [ ] test `2:u1` fails
-- [ ] test `-1:u1` fails
-- [ ] test `-1:i1` succeeds
-- [ ] test `2:u32 + 2:u32 == 4:u32` succeeds
+- [x] test `2:u1` fails
+- [x] test `(-1):u1` fails
+- [x] test `(-1):i1` succeeds
+- [x] test `2:u64 + 2:u64 == 4:u64` succeeds
 - [ ] rename `TY_CONST_FN` back to `TY_FN`
 - [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
   - `const` enforces that the result is compile-time known
