@@ -1,0 +1,6 @@
+error: unexpected token: RESERVED
+ --> tests/failure/reserved_01.spl:1:28
+  |
+  | const main = fn() -> i32 { 01 }
+  |                            ^^
+  expected: an expression.
