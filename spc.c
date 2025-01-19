@@ -16,7 +16,6 @@
 #include <limits.h>        // For ULLONG_MAX, LLONG_MAX
 
 #define MAX_TOKEN_LOOKAHEAD 2
-#define HEAP_COMMIT_SIZE (1024 * 1024) // 1 MiB
 
 enum TOKEN {
     TOKEN_EOF,
@@ -301,6 +300,7 @@ struct context {
     uintptr_t heap;
     uintptr_t heap_end;
     size_t commited_heap_size;
+    size_t heap_commit_size;
     size_t max_heap_size;
     struct type_node *free_type_nodes;
     struct symbol_node *free_symbol_nodes;
@@ -327,8 +327,8 @@ alloc(struct context *ctx, size_t size, size_t align) {
             fprintf(stderr, "error: heap size limit exceeded\n");
             exit(EXIT_FAILURE);
         }
-        // NOTE: assume HEAP_COMMIT_SIZE is a non-zero, positive power of 2
-        size_t new_commited_heap_size = (new_heap_size + HEAP_COMMIT_SIZE - 1) & ~(HEAP_COMMIT_SIZE - 1);
+        // NOTE: assume heap_commit_size is a non-zero, positive power of 2
+        size_t new_commited_heap_size = (new_heap_size + ctx->heap_commit_size - 1) & ~(ctx->heap_commit_size - 1);
         size_t commit_size = new_commited_heap_size - ctx->commited_heap_size;
         void *result = mmap((void *)(ctx->heap + ctx->commited_heap_size), commit_size,
                             PROT_READ | PROT_WRITE, MAP_ANON | MAP_FIXED | MAP_PRIVATE, -1, 0);
@@ -2182,29 +2182,10 @@ main(int argc, char *argv[]) {
     int opt;
     char output_file_path_buf[PATH_MAX + 1];
     char *output_file_path = NULL;
-    size_t max_heap_size = 1024 * 1024 * 1024; // 1 GiB
-    while ((opt = getopt(argc, argv, "o:m:")) != -1) {
+    while ((opt = getopt(argc, argv, "o:")) != -1) {
         switch(opt) {
             case 'o':
                 output_file_path = optarg;
-                break;
-            case 'm':
-                max_heap_size = 0;
-                for (size_t i = 0; optarg[i] != '\0'; i++) {
-                    if (optarg[i] < '0' || optarg[i] > '9') {
-                        fprintf(stderr, "error: invalid number: %s\n", optarg);
-                        return EXIT_FAILURE;
-                    }
-                    if (__builtin_mul_overflow(max_heap_size, 10, &max_heap_size)) {
-                        fprintf(stderr, "error: number out of range: %s\n", optarg);
-                        return EXIT_FAILURE;
-                    }
-                    char digit = optarg[i] - '0';
-                    if (__builtin_add_overflow(max_heap_size, digit, &max_heap_size)) {
-                        fprintf(stderr, "error: number out of range: %s\n", optarg);
-                        return EXIT_FAILURE;
-                    }
-                }
                 break;
             case '?':
                 // getopt already prints an error message for unknown options
@@ -2224,6 +2205,55 @@ main(int argc, char *argv[]) {
     if (output_file_path == NULL) {
         get_default_output_file_path(input_file_path, output_file_path_buf);
         output_file_path = output_file_path_buf;
+    }
+    // Parse environment variables
+    size_t heap_commit_size = 1024 * 1024; // 1 MiB
+    char *heap_commit_size_env_var = getenv("SPC_HEAP_COMMIT_SIZE");
+    if (heap_commit_size_env_var != NULL) {
+        char *endptr;
+        errno = 0;
+        long value = strtol(heap_commit_size_env_var, &endptr, 10);
+        if (errno != 0 || *endptr != '\0' || value <= 0) {
+            fprintf(stderr, "error: invalid value for SPC_HEAP_COMMIT_SIZE: '%s'\n", heap_commit_size_env_var);
+            return EXIT_FAILURE;
+        }
+        heap_commit_size = (size_t)value;
+    }
+    size_t max_heap_size = 1024 * 1024 * 1024; // 1 GiB
+    char *max_heap_size_env_var = getenv("SPC_MAX_HEAP_SIZE");
+    if (max_heap_size_env_var != NULL) {
+        char *endptr;
+        errno = 0;
+        long value = strtol(max_heap_size_env_var, &endptr, 10);
+        if (errno != 0 || *endptr != '\0' || value <= 0) {
+            fprintf(stderr, "error: invalid value for SPC_MAX_HEAP_SIZE: '%s'\n", max_heap_size_env_var);
+            return EXIT_FAILURE;
+        }
+        max_heap_size = (size_t)value;
+    }
+    // Get the system's page size
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size == -1) {
+        perror("sysconf");
+        exit(EXIT_FAILURE);
+    }
+    // Align heap_commit_size to page size
+    heap_commit_size = (heap_commit_size / page_size) * page_size;
+    if (heap_commit_size == 0) {
+        fprintf(stderr, "error: SPC_HEAP_COMMIT_SIZE must be larger than the page size: %ld\n", page_size);
+        return EXIT_FAILURE;
+    }
+    // Align max_heap_size to the commit size
+    max_heap_size = (max_heap_size / heap_commit_size) * heap_commit_size;
+    if (max_heap_size == 0) {
+        fprintf(stderr, "error: SPC_MAX_HEAP_SIZE must be larger than the commit size: %zu\n", heap_commit_size);
+        return EXIT_FAILURE;
+    }
+    // Reserve a memory block for the heap
+    void *heap = mmap(NULL, max_heap_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (heap == MAP_FAILED) {
+        fprintf(stderr, "internal compiler error while reserving memory: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
     }
 
     // Open the input file
@@ -2270,31 +2300,6 @@ main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Get the system's page size
-    long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size == -1) {
-        perror("sysconf");
-        exit(EXIT_FAILURE);
-    }
-    // Align max_heap_size to page size
-    max_heap_size = (max_heap_size / page_size) * page_size;
-    if (max_heap_size == 0) {
-        fprintf(stderr, "error: max heap size must be larger than the page size: %ld\n", page_size);
-        return EXIT_FAILURE;
-    }
-    // Align max_heap_size to the commit size
-    max_heap_size = (max_heap_size / HEAP_COMMIT_SIZE) * HEAP_COMMIT_SIZE;
-    if (max_heap_size == 0) {
-        fprintf(stderr, "error: max heap size must be larger than the commit size: %d\n", HEAP_COMMIT_SIZE);
-        return EXIT_FAILURE;
-    }
-    // Reserve a memory block for the heap
-    void *heap = mmap(NULL, max_heap_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (heap == MAP_FAILED) {
-        fprintf(stderr, "internal compiler error while reserving memory: %s\n", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
     // Compile the program
     struct context ctx = {
         .output_file = tmp_output_file,
@@ -2305,6 +2310,7 @@ main(int argc, char *argv[]) {
         .heap = (uintptr_t)heap,
         .heap_end = (uintptr_t)heap,
         .commited_heap_size = 0,
+        .heap_commit_size = heap_commit_size,
         .max_heap_size = max_heap_size,
         .scope_stack = NULL,
         .free_symbol_nodes = NULL,
