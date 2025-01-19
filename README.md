@@ -88,60 +88,28 @@ reserved_number =
 - [x] never type
 - [x] basic vscode language support
 - [x] `u1`-`u64`, `i1`-`i64` types with [subtype](type_system.md) checking
-- [x] default to i64, and always use 64-bit ops, for now
 - [x] inline type annotation / coersion
 - [x] add `let _ =` as explicit drop
 - [x] const int types with compile-time evaluation of const ops
-  - [x] fix nesting of live code within dead code; need `ctx->is_dead_code = was_dead_code | is_dead_code` instead of just `ctx->is_dead_code = is_dead_code`
-  - [x] fix trap on `if (1:i64 <= 0) { __builtin_trap() }`
-  - [x] fix `if` without else returning TY_NEVER; should be TY_UNIT always
-  - [x] hoist `require_subtype,emit_type_coersion,.type =` pattern into a helpr
-  - [x] fix `error: expected an integer type, not const int:` on `0 && __builtin_trap()`
-  - [x] fix `error: expected an integer type, not const int:` on `1 || __builtin_trap()`
-  - [x] test every pair of CONST_INT, INT binary ops?
-  - [x] test and fix ops applied to TY_NEVER
-- [x] test and fix `if v { __builtin_trap() } else { 1 }`
-- [x] test `if` dead code elim; both ways
-- [x] test deadcode elim after `__builtin_trap()` in middle of a block
-- [x] test `fail_invalid_type_for_arithmetic`
-- [x] test `fail_const_int_div_by_zero`
-- [x] test `fail_const_int_rem_by_zero`
-- [x] test assembly of `&&`, `||` with consts
-- [x] test assembly of `if` with consts
-  - [x] fix: `if 0 { 2 } else { 3 }` pushing `2`
-- [x] fix: non-const if should not return TY_CONST_INT
-- [x] test parsing / emission of i64 minimum value
-- [x] test that `"0" dec_literal` is reserved
-- [x] test `2:u1` fails
-- [x] test `(-1):u1` fails
-- [x] test `(-1):i1` succeeds
-- [x] test `2:u64 + 2:u64 == 4:u64` succeeds
-- [x] rename `TY_CONST_FN` back to `TY_FN`
 - [x] change `const main` to `const let main` in preparation for `const` being a modifier
-- [ ] `const let` support for `const int`
-- [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
-  - `const` enforces that the result is compile-time known
-  - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.
-  - `const if` enforces that only one branch's code is emitted (but all are parsed / type checked)
-  - `const for` can be used for compile-time loop unrolling
-- [ ] add semicolons back?
-  - needed to distinguish `let a = b - 0` from `let a = b (-0)`...
-  - that's kinda dumb, though, since `let a = b (-0)` is useless outside of tests...
-  - maybe we can just check for this and provide a helpful error message?
-
-
-- [ ] measure test coverage
+- [x] measure test coverage
 - [ ] `let` type annotations
+- [ ] `let` forward type declarations
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte-slice string literals, i.e. `b"Hello"`
 - [ ] up to 8 (single-word) function (in) parameters (i.e. passed via registers)
 - [ ] inout (`name: <->type`) and out (`name: ->type`) parameters
-- [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
-  - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
 - [ ] nullable and non-nullable pointer types, with coersion
   - we'll need them eventually, but perhaps not yet?
   - and perhaps we'll only allow dereferencing in an `unsafe` block?
+- [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
+  - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
+- [ ] `const let` support for `const int`
+- [ ] `const <expr>`: enforces that the result is a compile-time constant
+- [ ] `const if`: enforces that only one branch's code is emitted
+  - but both branches are parsed and type checked
+- [ ] `const for`: compile-time loop unrolling
 - [ ] reserve builtin type idents, e.g. `unit`, `never`, `u1`-`u64`, `i1`-`i64`
 - [ ] rename types to start with capital letter?
 - [ ] add line numbers to error messages

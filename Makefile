@@ -18,10 +18,14 @@ clean:
 	git clean -dfX --exclude="!/.vscode"
 
 spc: spc.c
-	clang --debug -std=c11 -pedantic -Wall -Wno-gnu-case-range -o $@ $<
+	clang --debug -std=c11 -pedantic -Wall -Wno-gnu-case-range \
+		-fprofile-instr-generate -fcoverage-mapping -mmacosx-version-min=14.7 \
+		-o $@ $<
 
 
 test: test-assembly test-failure test-success
+	@llvm-profdata merge -o tests.profdata tests/*/*.profraw
+	llvm-cov show ./spc -instr-profile=tests.profdata -format=html -output-dir=coverage
 
 
 test-assembly:
@@ -29,8 +33,9 @@ test-assembly:
 	@FAIL=0; \
 	for SPL in $(TEST_ASSEMBLY_SPL_FILES); do \
 		TMP_OUT=$$(mktemp); \
-		OUT=$$(echo "$$SPL" | sed 's/\.[^.]*$$/.s/'); \
-		./spc -o $$TMP_OUT "$$SPL"; \
+		PROF_OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.profraw/')"; \
+		OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.s/')"; \
+		LLVM_PROFILE_FILE="$$PROF_OUT.profraw" ./spc -o $$TMP_OUT "$$SPL"; \
 		if cmp -s "$$TMP_OUT" "$$OUT"; then \
 			rm "$$TMP_OUT"; \
 		else \
@@ -52,8 +57,9 @@ test-failure:
 	@FAIL=0; \
 	for SPL in $(TEST_FAILURE_SPL_FILES); do \
 		TMP_OUT=$$(mktemp); \
-		OUT=$$(echo "$$SPL" | sed 's/\.[^.]*$$/.txt/'); \
-		./spc -o $$(mktemp) "$$SPL" >"$$TMP_OUT" 2>&1; \
+		PROF_OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.profraw/')"; \
+		OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.txt/')"; \
+		LLVM_PROFILE_FILE="$$PROF_OUT.profraw" ./spc -o $$(mktemp) "$$SPL" >"$$TMP_OUT" 2>&1; \
 		if cmp -s "$$TMP_OUT" "$$OUT"; then \
 			rm "$$TMP_OUT"; \
 		else \
@@ -86,6 +92,6 @@ tests/success/%: tests/success/%.s
 	clang -O0 --debug -o $@ $<
 
 tests/success/%.s: tests/success/%.spl spc
-	./spc -o $@ $<
+	LLVM_PROFILE_FILE="$$(echo "$<" | sed 's/\.[^.]*$$/.profraw/')" ./spc -o $@ $<
 
 tests/success/%.spl:

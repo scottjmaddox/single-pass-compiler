@@ -1,8 +1,8 @@
 error: expected type `const int` from:
- --> tests/failure/type_anno_-1_u1.spl:1:32
+ --> tests/failure/type_anno_-1_u1.spl:1:31
   |
   | const let main = fn() -> u1 { (-1):u1 }
-  |                                ^^
+  |                               ^^^^
   to be a subtype of type `u1` from:
  --> tests/failure/type_anno_-1_u1.spl:1:36
   |

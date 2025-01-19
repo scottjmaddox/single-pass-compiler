@@ -1,0 +1,6 @@
+error: const integer out of range:
+ --> tests/failure/const_add_overflow.spl:2:13
+  |
+  |     let a = 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF + 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  expected range: -2¹²⁷ to 2¹²⁷ - 1

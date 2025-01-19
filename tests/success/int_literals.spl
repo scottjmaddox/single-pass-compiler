@@ -7,4 +7,13 @@ const let main = fn() {
 
     if 0x0 != 0 { __builtin_trap() }
     if 0xff != 255 { __builtin_trap() }
+
+    if 0b0:u64 != 0 { __builtin_trap() }
+    if 0b11:u64 != 3 { __builtin_trap() }
+
+    if 0o0:u64 != 0 { __builtin_trap() }
+    if 0o77:u64 != 63 { __builtin_trap() }
+
+    if 0x0:u64 != 0 { __builtin_trap() }
+    if 0xff:u64 != 255 { __builtin_trap() }
 }

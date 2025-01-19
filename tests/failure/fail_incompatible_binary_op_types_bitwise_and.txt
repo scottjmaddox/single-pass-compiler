@@ -1,0 +1,10 @@
+error: type mismatch for `&` operator: `u1` from:
+ --> tests/failure/fail_incompatible_binary_op_types_bitwise_and.spl:2:5
+  |
+  |     1:u1 & 1:u2
+  |     ^^^^
+  and `u2` from:
+ --> tests/failure/fail_incompatible_binary_op_types_bitwise_and.spl:2:12
+  |
+  |     1:u1 & 1:u2
+  |            ^^^^

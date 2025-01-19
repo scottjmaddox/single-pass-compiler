@@ -1,0 +1,2 @@
+const let v = fn() -> u2 { 0 }
+const let main = fn() -> u1 { 1 && v() }

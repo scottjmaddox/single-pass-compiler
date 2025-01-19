@@ -1,0 +1,3 @@
+const let main = fn() {
+    let a = -0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF - 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+}

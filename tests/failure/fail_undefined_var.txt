@@ -1,0 +1,5 @@
+error: undefined variable
+ --> tests/failure/fail_undefined_var.spl:2:5
+  |
+  |     a
+  |     ^

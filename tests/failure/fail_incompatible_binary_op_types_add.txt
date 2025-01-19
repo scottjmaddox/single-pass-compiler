@@ -1,0 +1,10 @@
+error: type mismatch for `+` operator: `i64` from:
+ --> tests/failure/fail_incompatible_binary_op_types_add.spl:2:5
+  |
+  |     1:i64 + 1:u64
+  |     ^^^^^
+  and `u64` from:
+ --> tests/failure/fail_incompatible_binary_op_types_add.spl:2:13
+  |
+  |     1:i64 + 1:u64
+  |             ^^^^^

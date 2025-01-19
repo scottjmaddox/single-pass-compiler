@@ -783,12 +783,6 @@ peek_token_loc(struct context *ctx) {
     return ctx->tokens[ctx->token_offset].loc;
 }
 
-static struct span
-peek_token_span(struct context *ctx) {
-    if (ctx->token_count == 0) { fill_tokens(ctx); }
-    return token_span(ctx, ctx->tokens[ctx->token_offset]);
-}
-
 ///////////////////////////////
 // Diagnostics and Utilities //
 ///////////////////////////////
@@ -927,8 +921,7 @@ fail_expected_type_int(struct context *ctx, struct type_span actual) {
 
 static void
 fail_incompatible_binary_op_types(struct context *ctx, enum BINARY_OP op, struct type_span left, struct type_span right) {
-    // TODO: incorporate `op` into the error message
-    fprintf(stderr, "error: bitwise operation type mismatch between `");
+    fprintf(stderr, "error: type mismatch for `%s` operator: `", BINARY_OP_DISPLAY[op]);
     eprint_type(left.type);
     fprintf(stderr, "` from:\n");
     eprint_span(ctx, left.span);
@@ -1495,14 +1488,12 @@ compile_let_expr(struct context *ctx) {
         case TY_CONST_INT: {
             struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp };
             push_symbol(ctx, var_sym);
-            break;
-        }
+        } break;
         case TY_INT: {
             ctx->stack_offset -= 16;
             struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp, .var_stack_offset = ctx->stack_offset };
             push_symbol(ctx, var_sym);
-            break;
-        }
+        } break;
         }
     }
     return return_tysp;
@@ -1655,15 +1646,16 @@ compile_expr(struct context *ctx, int min_binding_power) {
     struct type_span left_tysp = { 0 };
     struct type_span right_tysp = { 0 };
     switch (peek_token_kind(ctx)) {
-    case TOKEN_RIGHT_BRACE: return (struct type_span){ .type = { .kind = TY_UNIT }, .span = peek_token_span(ctx) };
     case TOKEN_LEFT_BRACE: left_tysp = compile_block(ctx, true); break;
     case TOKEN_KEYWORD_IF: left_tysp = compile_if_expr(ctx); break;
     case TOKEN_KEYWORD_LET: left_tysp = compile_let_expr(ctx); break;
-    case TOKEN_LEFT_PAREN:
-        take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
+    case TOKEN_LEFT_PAREN: {
+        struct token left_paren_tok, right_paren_tok;
+        take_token_expect_kind(ctx, &left_paren_tok, TOKEN_LEFT_PAREN);
         left_tysp = compile_expr(ctx, 0);
-        take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_PAREN);
-        break;
+        take_token_expect_kind(ctx, &right_paren_tok, TOKEN_RIGHT_PAREN);
+        left_tysp.span = (struct span){ .start = left_paren_tok.loc, .end = token_end(ctx, right_paren_tok) };
+    } break;
     case TOKEN_INT_LITERAL: left_tysp = compile_int_literal(ctx); break;
     case TOKEN_IDENT:
         if (peek_token_kind_at(ctx, 1) == TOKEN_LEFT_PAREN) {
@@ -1779,8 +1771,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
             } else {
                 assert(!"unreachable");
             }
-            break;
-        }
+        } break;
         case BINARY_OP_LOGICAL_AND: {
             require_subtype_of_int(ctx, left_tysp);
             if (left_tysp.type.kind == TY_NEVER) {
@@ -1849,13 +1840,11 @@ compile_expr(struct context *ctx, int min_binding_power) {
             } else {
                 assert(!"unreachable");
             }
-            break;
-        }
+        } break;
         case BINARY_OP_TYPE_ANNO: {
             right_tysp = parse_type(ctx);
             result_type = require_subtype_coerce(ctx, left_tysp, right_tysp);
-            break;
-        }
+        } break;
         default: {
             require_subtype_of_int(ctx, left_tysp);
             bool was_dead_code = ctx->is_dead_code;
@@ -1887,8 +1876,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 result_type = calc_binary_op_type(ctx, op, left_tysp, right_tysp);
                 emit_binary_op(ctx, op, left_tysp.type, right_tysp.type, swap);
             }
-            break;
-        }
+        } break;
         }
         struct type_span result_tysp = {
             .type = result_type,
@@ -1940,12 +1928,12 @@ compile_if_expr(struct context *ctx) {
         size_t done_label = ctx->local_label_count++;
         emit_local_forward_branch_if_zero(ctx, false_label);
         struct type_span then_tysp = compile_block(ctx, true);
-        if (then_tysp.type.kind == TY_CONST_INT) {
-            fail_type_anno_needed(ctx, then_tysp);
-        }
         emit_local_forward_branch(ctx, done_label);
         emit_local_label(ctx, false_label);
         if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
+            if (then_tysp.type.kind == TY_CONST_INT) {
+                fail_type_anno_needed(ctx, then_tysp);
+            }
             take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_ELSE);
             struct type_span else_tysp = { 0 };
             if (peek_token_kind(ctx) == TOKEN_KEYWORD_IF) {

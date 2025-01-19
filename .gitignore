@@ -1,6 +1,9 @@
 /spc
 *.dSYM/
 *.s
+*.profraw
+*.profdata
+/coverage/
 /examples/*
 !/examples/*.c
 !/examples/*.spl

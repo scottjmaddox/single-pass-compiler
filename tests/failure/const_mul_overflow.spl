@@ -1,0 +1,3 @@
+const let main = fn() {
+    let a = 0xFFFF_FFFF_FFFF_FFFF * 0xFFFF_FFFF_FFFF_FFFF
+}

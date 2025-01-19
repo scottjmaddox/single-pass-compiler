@@ -1,0 +1,4 @@
+const let foo = fn() -> i32 { 1 }
+const let main = fn() {
+    let _ = foo()
+}
