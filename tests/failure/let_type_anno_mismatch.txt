@@ -1,0 +1,13 @@
+error: expected type `const int` from:
+ --> tests/failure/let_type_anno_mismatch.spl:2:17
+  |
+  |     let x: u0 = 1
+  |                 ^
+  to be a subtype of type `u0` from:
+ --> tests/failure/let_type_anno_mismatch.spl:2:12
+  |
+  |     let x: u0 = 1
+  |            ^^
+  note: type A is a subtype of type B if and only if:
+  - every value that A can represent is representable by B, and
+  - type A supports all the operations that type B supports

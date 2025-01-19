@@ -1463,7 +1463,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
 
 static struct type_span
 compile_let_expr(struct context *ctx) {
-    // EBNF: let_expr = "let" ident "=" expr ;
+    // EBNF: let_expr = "let" ident [ ":" type_expr ] "=" expr ;
     struct token let_tok;
     take_token_expect_kind(ctx, &let_tok, TOKEN_KEYWORD_LET);
     struct token name_tok;
@@ -1471,11 +1471,21 @@ compile_let_expr(struct context *ctx) {
     if (str_starts_with(token_str(ctx, name_tok), BUILTIN_STR)) {
         fail_reserved_ident(ctx, name_tok);
     }
+    bool has_type_anno = false;
+    struct type_span declared_tysp = { 0 };
+    if (peek_token_kind(ctx) == TOKEN_COLON) {
+        take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+        declared_tysp = parse_type(ctx);
+        has_type_anno = true;
+    }
     // TODO: check for shadowed var in the same scope, and drop their value (and reuse the stack slot?)
     take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
     struct type_span expr_tysp = compile_expr(ctx, 0);
     struct span let_span = { .start = let_tok.loc, .end = expr_tysp.span.end };
     struct type_span return_tysp = { .type = { .kind = TY_UNIT }, .span = let_span };
+    if (has_type_anno) {
+        expr_tysp.type = require_subtype_coerce(ctx, expr_tysp, declared_tysp);
+    }
     if (expr_tysp.type.kind == TY_NEVER) {
         return_tysp.type = (struct type){ .kind = TY_NEVER };
     } else if (str_equals(token_str(ctx, name_tok), WILDCARD_STR)) {

@@ -22,7 +22,7 @@ type_expr = ident ;
 block = "{" { expr } "}" ;
 expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
-let_expr = "let" ident "=" expr ;
+let_expr = "let" ident [ ":" type_expr ] "=" expr ;
 fn_call = ident "(" ")" ;
 var_expr = ident ;
 op_expr = prefix_op expr | expr infix_op expr ;
@@ -93,8 +93,7 @@ reserved_number =
 - [x] const int types with compile-time evaluation of const ops
 - [x] change `const main` to `const let main` in preparation for `const` being a modifier
 - [x] measure test coverage
-- [ ] `let` type annotations
-- [ ] `let` forward type declarations
+- [x] `let` type annotations
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte-slice string literals, i.e. `b"Hello"`
@@ -105,7 +104,9 @@ reserved_number =
   - and perhaps we'll only allow dereferencing in an `unsafe` block?
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
   - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
+- [ ] `const let` forward type declarations
 - [ ] `const let` support for `const int`
+- [ ] local `const let` support
 - [ ] `const <expr>`: enforces that the result is a compile-time constant
 - [ ] `const if`: enforces that only one branch's code is emitted
   - but both branches are parsed and type checked

@@ -1,0 +1,4 @@
+const let main = fn() -> u0 {
+    let x: u0 = 1
+    x
+}
