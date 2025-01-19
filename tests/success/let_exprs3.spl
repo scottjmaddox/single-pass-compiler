@@ -1,5 +1,5 @@
 // Testing prefix operators, numeric literals, and nested conditionals.
-const test_prefix_ops = fn() -> i64 {
+const let test_prefix_ops = fn() -> i64 {
     // !0 should typically be 1, ~0 should typically be -1 (in 32-bit),
     // and -0 is just 0.
     let a = !0
@@ -27,7 +27,7 @@ const test_prefix_ops = fn() -> i64 {
 }
 
 // Testing various infix operators (multiplication, addition, modulo, shift).
-const test_infix_ops = fn() -> i64 {
+const let test_infix_ops = fn() -> i64 {
     // x = (20 + (3 * 2)) % 9
     //   = (20 + 6) % 9
     //   = 26 % 9
@@ -48,7 +48,7 @@ const test_infix_ops = fn() -> i64 {
 }
 
 // The main function combines the tests above and uses a nested block to shadow a variable.
-const main = fn() -> i64 {
+const let main = fn() -> i64 {
     let prefix_result = test_prefix_ops()
     let infix_result = test_infix_ops()
 

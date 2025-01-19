@@ -1,2 +1,2 @@
-const foo = fn() -> i2 { 0:i2 }
-const main = fn() -> i1 { foo() }
+const let foo = fn() -> i2 { 0:i2 }
+const let main = fn() -> i1 { foo() }

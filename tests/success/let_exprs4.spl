@@ -1,7 +1,7 @@
 // This program tests multiple language features.
 
 // A helper function that returns 10 if 0xFF == 255 (true), otherwise 20.
-const helper = fn() -> i64 {
+const let helper = fn() -> i64 {
     // helper returns 10 if 0xFF is 255
     let a = 0xFF
     if a == 255 {
@@ -13,7 +13,7 @@ const helper = fn() -> i64 {
 
 // The main function makes use of helper(), octal and binary literals,
 // nested blocks, arithmetic, and logical operators.
-const main = fn() -> i64 {
+const let main = fn() -> i64 {
     // x = 10 (returned by helper)
     let x = helper()
 

@@ -1,10 +1,10 @@
-const unary_op_never = fn() {
+const let unary_op_never = fn() {
     (-__builtin_trap()): never
     (~__builtin_trap()): never
     (!__builtin_trap()): never
 }
 
-const const_int_binary_op_never = fn() {
+const let const_int_binary_op_never = fn() {
     (0 *  __builtin_trap()): never
     (0 /  __builtin_trap()): never
     (0 %  __builtin_trap()): never
@@ -27,7 +27,7 @@ const const_int_binary_op_never = fn() {
     (1 || __builtin_trap()): u1
 }
 
-const never_binary_op_const_int = fn() {
+const let never_binary_op_const_int = fn() {
     (__builtin_trap() *  0): never
     (__builtin_trap() /  1): never
     (__builtin_trap() %  1): never
@@ -48,7 +48,7 @@ const never_binary_op_const_int = fn() {
     (__builtin_trap() || 0): never
 }
 
-const never_binary_op_never = fn() {
+const let never_binary_op_never = fn() {
     (__builtin_trap() *  __builtin_trap()): never
     (__builtin_trap() /  __builtin_trap()): never
     (__builtin_trap() %  __builtin_trap()): never
@@ -69,4 +69,4 @@ const never_binary_op_never = fn() {
     (__builtin_trap() || __builtin_trap()): never
 }
 
-const main = fn() {}
+const let main = fn() {}

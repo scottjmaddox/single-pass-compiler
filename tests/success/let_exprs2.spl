@@ -1,4 +1,4 @@
-const main = fn() -> i32 {
+const let main = fn() -> i32 {
     let a = 1
     {
         let a = 0:i32

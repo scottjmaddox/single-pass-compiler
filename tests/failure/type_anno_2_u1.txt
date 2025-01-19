@@ -1,13 +1,13 @@
 error: expected type `const int` from:
- --> tests/failure/type_anno_2_u1.spl:1:27
+ --> tests/failure/type_anno_2_u1.spl:1:31
   |
-  | const main = fn() -> u1 { 2:u1 }
-  |                           ^
+  | const let main = fn() -> u1 { 2:u1 }
+  |                               ^
   to be a subtype of type `u1` from:
- --> tests/failure/type_anno_2_u1.spl:1:29
+ --> tests/failure/type_anno_2_u1.spl:1:33
   |
-  | const main = fn() -> u1 { 2:u1 }
-  |                             ^^
+  | const let main = fn() -> u1 { 2:u1 }
+  |                                 ^^
   note: type A is a subtype of type B if and only if:
   - every value that A can represent is representable by B, and
   - type A supports all the operations that type B supports

@@ -1,6 +1,6 @@
 error: const integer out of range:
- --> tests/failure/int_literal_out_of_range.spl:1:21
+ --> tests/failure/int_literal_out_of_range.spl:1:25
   |
-  | const main = fn() { 9999999999999999999999999999999999999999 }
-  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | const let main = fn() { 9999999999999999999999999999999999999999 }
+  |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   expected range: -2¹²⁷ to 2¹²⁷ - 1

@@ -1,6 +1,6 @@
 error: unexpected token: RESERVED
- --> tests/failure/reserved_0b___.spl:1:28
+ --> tests/failure/reserved_0b___.spl:1:32
   |
-  | const main = fn() -> i32 { 0b___ }
-  |                            ^^^^^
+  | const let main = fn() -> i32 { 0b___ }
+  |                                ^^^^^
   expected: an expression.

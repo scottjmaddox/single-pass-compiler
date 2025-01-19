@@ -1,5 +1,5 @@
-const if_never = fn() {
+const let if_never = fn() {
     if __builtin_trap() { 1:u1 } else { 0 }: never
 }
 
-const main = fn() {}
+const let main = fn() {}

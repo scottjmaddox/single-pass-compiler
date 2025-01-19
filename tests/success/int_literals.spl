@@ -1,4 +1,4 @@
-const main = fn() {
+const let main = fn() {
     if 0b0 != 0 { __builtin_trap() }
     if 0b11 != 3 { __builtin_trap() }
 

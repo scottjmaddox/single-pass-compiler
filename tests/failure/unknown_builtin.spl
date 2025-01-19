@@ -1,1 +1,1 @@
-const main = fn() { __builtin_does_not_exist() }
+const let main = fn() { __builtin_does_not_exist() }

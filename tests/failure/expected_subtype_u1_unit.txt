@@ -1,13 +1,13 @@
 error: expected type `u1` from:
- --> tests/failure/expected_subtype_u1_unit.spl:1:21
+ --> tests/failure/expected_subtype_u1_unit.spl:1:25
   |
-  | const main = fn() { 1:u1 }
-  |                     ^^^^
+  | const let main = fn() { 1:u1 }
+  |                         ^^^^
   to be a subtype of type `unit` from:
- --> tests/failure/expected_subtype_u1_unit.spl:1:18
+ --> tests/failure/expected_subtype_u1_unit.spl:1:22
   |
-  | const main = fn() { 1:u1 }
-  |                  ^
+  | const let main = fn() { 1:u1 }
+  |                      ^
   note: type A is a subtype of type B if and only if:
   - every value that A can represent is representable by B, and
   - type A supports all the operations that type B supports

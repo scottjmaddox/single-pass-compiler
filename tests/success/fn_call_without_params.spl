@@ -1,5 +1,5 @@
-const foo = fn() {}
+const let foo = fn() {}
 
-const main = fn() {
+const let main = fn() {
     foo()
 }

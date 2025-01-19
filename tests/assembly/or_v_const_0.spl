@@ -1,2 +1,2 @@
-const v = fn() -> u1 { 0 }
-const main = fn() -> u1 { v() || 0 }
+const let v = fn() -> u1 { 0 }
+const let main = fn() -> u1 { v() || 0 }

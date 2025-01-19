@@ -1,5 +1,5 @@
-const foo = fn() -> u1 { 0 }
+const let foo = fn() -> u1 { 0 }
 
-const main = fn() {
+const let main = fn() {
     if foo() { __builtin_trap() }
 }

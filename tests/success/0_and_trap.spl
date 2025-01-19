@@ -1,4 +1,4 @@
-const main = fn() {
+const let main = fn() {
     0 && __builtin_trap()
     {}
 }

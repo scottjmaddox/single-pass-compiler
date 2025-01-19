@@ -15,8 +15,8 @@ make
 The currently supported grammar, in extended Backus–Naur form (EBNF):
 
 ```ebnf
-program = { const_def } ;
-const_def = "const" ident "=" fn_def ;
+program = { const_let } ;
+const_let = "const" "let" ident "=" fn_def ;
 fn_def = "fn" "(" ")" "->" type_expr block ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
@@ -117,7 +117,8 @@ reserved_number =
 - [x] test `(-1):i1` succeeds
 - [x] test `2:u64 + 2:u64 == 4:u64` succeeds
 - [x] rename `TY_CONST_FN` back to `TY_FN`
-- [ ] change `const main` to `const let main` in preparation for `const` being a modifier
+- [x] change `const main` to `const let main` in preparation for `const` being a modifier
+- [ ] `const let` support for `const int`
 - [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
   - `const` enforces that the result is compile-time known
   - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.
@@ -137,7 +138,7 @@ reserved_number =
 - [ ] up to 8 (single-word) function (in) parameters (i.e. passed via registers)
 - [ ] inout (`name: <->type`) and out (`name: ->type`) parameters
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
-  - e.g. `const write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
+  - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
 - [ ] nullable and non-nullable pointer types, with coersion
   - we'll need them eventually, but perhaps not yet?
   - and perhaps we'll only allow dereferencing in an `unsafe` block?

@@ -1356,7 +1356,7 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
 }
 
 static void compile_program(struct context *ctx);
-static void compile_const_def(struct context *ctx);
+static void compile_const_let(struct context *ctx);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static struct type_span compile_let_expr(struct context *ctx);
 static struct type_span compile_var_expr(struct context *ctx);
@@ -1369,20 +1369,21 @@ static struct type_span compile_int_literal(struct context *ctx);
 
 static void
 compile_program(struct context *ctx) {
-    // EBNF: program = { const_def } ;
+    // EBNF: program = { const_let } ;
     emit_program_prologue(ctx);
     push_scope(ctx);
     while (peek_token_kind(ctx) != TOKEN_EOF) {
-        compile_const_def(ctx);
+        compile_const_let(ctx);
     }
     // NOTE: no need to pop_scope, since this is the top level
     emit_program_epilogue(ctx);
 }
 
 static void
-compile_const_def(struct context *ctx) {
-    // EBNF: const_def = "const" ident "=" fn_def ;
+compile_const_let(struct context *ctx) {
+    // EBNF: const_let = "const" "let" ident "=" fn_def ;
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_CONST);
+    take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     if (str_starts_with(token_str(ctx, name_tok), BUILTIN_STR)) {

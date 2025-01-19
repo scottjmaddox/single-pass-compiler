@@ -1,4 +1,4 @@
-const v = fn() -> u1 { 0 }
-const main = fn() {
+const let v = fn() -> u1 { 0 }
+const let main = fn() {
     if v() { 1 } else { 0 }
 }

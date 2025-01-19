@@ -7,7 +7,7 @@
 
 // 1) This function checks various prefix operators and
 //    numeric forms. It returns 1 if all checks pass.
-const test_prefix_ops = fn() -> i64 {
+const let test_prefix_ops = fn() -> i64 {
     // a = !1 => should be 0
     let a = !1
 
@@ -50,7 +50,7 @@ const test_prefix_ops = fn() -> i64 {
 // 2) This function checks various infix operators.
 //    It also uses nested blocks and multiple let-bindings
 //    to test shadowing. It returns 1 if correct.
-const test_infix_ops = fn() -> i64 {
+const let test_infix_ops = fn() -> i64 {
     // x = ((8 + 2) * 3) % 5 = (10 * 3) % 5 = 30 % 5 = 0
     let x = (8 + 2) * 3 % 5
 
@@ -80,7 +80,7 @@ const test_infix_ops = fn() -> i64 {
 
 // 3) This function tests deeply nested if/else if logic,
 //    negative decimal literals, and bitwise combos.
-const test_nested_ifs = fn() -> i64 {
+const let test_nested_ifs = fn() -> i64 {
     // Start with some local variables:
     let a = 42
     let b = -42
@@ -117,7 +117,7 @@ const test_nested_ifs = fn() -> i64 {
 // 4) This function demonstrates that shadowing can happen
 //    at multiple levels and calls `__builtin_trap()` if
 //    any internal check fails.
-const test_multi_shadow = fn() -> i64 {
+const let test_multi_shadow = fn() -> i64 {
     let x = 10
     let y = 20
 
@@ -154,7 +154,7 @@ const test_multi_shadow = fn() -> i64 {
 // MAIN - orchestrates all tests. If any test fails,
 //        it calls __builtin_trap().
 // ----------------------------------------------------
-const main = fn() -> i64 {
+const let main = fn() -> i64 {
     // 1) test_prefix_ops
     if test_prefix_ops() != 1 {
         __builtin_trap()
