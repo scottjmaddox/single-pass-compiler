@@ -116,7 +116,8 @@ reserved_number =
 - [x] test `(-1):u1` fails
 - [x] test `(-1):i1` succeeds
 - [x] test `2:u64 + 2:u64 == 4:u64` succeeds
-- [ ] rename `TY_CONST_FN` back to `TY_FN`
+- [x] rename `TY_CONST_FN` back to `TY_FN`
+- [ ] change `const main` to `const let main` in preparation for `const` being a modifier
 - [ ] change `const` into a modifier, e.g. `const let`, `const <expr>`, `const if`
   - `const` enforces that the result is compile-time known
   - `const let` and `const <expr>` enforce that the rvalue is a `TY_CONST_FN` or `TY_CONST_INT`, etc.

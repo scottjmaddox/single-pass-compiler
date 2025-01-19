@@ -239,7 +239,7 @@ struct span {
 enum TY {
     TY_UNIT,
     TY_NEVER,
-    TY_CONST_FN,
+    TY_FN,
     TY_CONST_INT,
     TY_INT,
 };
@@ -248,7 +248,7 @@ struct type {
     enum TY kind;
     union {
         // `arg_list` stores type constructor arguments.
-        // For TY_CONST_FN, that's the parameter types followed by the return type.
+        // For TY_FN, that's the parameter types followed by the return type.
         struct type_node *arg_list;
         // For TY_CONST_INT, `value` stores the constant value.
         __int128_t value;
@@ -420,7 +420,7 @@ pop_scope(struct context *ctx) {
         struct symbol_node *node = scope->symbol_list;
         scope->symbol_list = node->next;
         struct type ty = node->sym.tysp.type;
-        if (ty.kind == TY_CONST_FN) {
+        if (ty.kind == TY_FN) {
             struct type_node *arg = ty.arg_list;
             while (arg != NULL) {
                 struct type_node *next = arg->next;
@@ -459,7 +459,7 @@ type_equals(struct type a, struct type b) {
     case TY_UNIT:
     case TY_NEVER:
         return true;
-    case TY_CONST_FN:
+    case TY_FN:
         {
             struct type_node *a_arg = a.arg_list;
             struct type_node *b_arg = b.arg_list;
@@ -798,7 +798,7 @@ eprint_type(struct type ty) {
     switch (ty.kind) {
     case TY_UNIT: fprintf(stderr, "unit"); break;
     case TY_NEVER: fprintf(stderr, "never"); break;
-    case TY_CONST_FN: assert(!"not implemented"); break; // TODO: implement
+    case TY_FN: assert(!"not implemented"); break; // TODO: implement
     case TY_CONST_INT: fprintf(stderr, "const int"); break;
     case TY_INT:
         if (ty.sgnd) {
@@ -1062,7 +1062,7 @@ emit_drop_type(struct context *ctx, enum TY ty) {
     switch (ty) {
         case TY_UNIT:
         case TY_NEVER:
-        case TY_CONST_FN:
+        case TY_FN:
         case TY_CONST_INT:
             break;
         // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
@@ -1110,7 +1110,7 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
     case TY_UNIT:
     case TY_NEVER:
         emit_clear_reg(ctx, "x0"); break;
-    case TY_CONST_FN:
+    case TY_FN:
     case TY_CONST_INT:
         assert(!"unreachable"); break;
     case TY_INT: emit_pop(ctx, "x0"); break;
@@ -1133,7 +1133,7 @@ emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TY return_ty
     switch (return_type) {
         case TY_UNIT:
         case TY_NEVER: break;
-        case TY_CONST_FN:
+        case TY_FN:
         case TY_CONST_INT: assert(!"unreachable");
         case TY_INT: emit_push(ctx, "x0"); break;
     }
@@ -1276,7 +1276,7 @@ static void
 require_subtype_of_int(struct context *ctx, struct type_span tysp) {
     switch (tysp.type.kind) {
     case TY_UNIT:
-    case TY_CONST_FN:
+    case TY_FN:
         fail_expected_type_int(ctx, tysp);
     case TY_NEVER:
     case TY_CONST_INT:
@@ -1293,8 +1293,8 @@ is_subtype(struct type left, struct type right) {
     switch (left.kind) {
     case TY_UNIT: if (right.kind == TY_UNIT) { return true; } break;
     case TY_NEVER: return true;
-    case TY_CONST_FN:
-        if (right.kind == TY_CONST_FN) {
+    case TY_FN:
+        if (right.kind == TY_FN) {
             assert(!"not implemented"); // TODO: implement
         }
         break;
@@ -1344,7 +1344,7 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     switch (from.type.kind) {
     case TY_UNIT: break;
     case TY_NEVER: break;
-    case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
+    case TY_FN: assert(!"not implemented"); // TODO: implement
     case TY_CONST_INT:
         if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
          break;
@@ -1453,7 +1453,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     struct span fn_span = (struct span){ .start = fn_tok.loc, .end = declared_return_tysp.span.end };
     struct type_node *fn_arg_list = alloc_type_node(ctx);
     *fn_arg_list = (struct type_node){ .next = NULL, .tysp = declared_return_tysp };
-    struct type_span fn_tysp = { .type = { .kind = TY_CONST_FN, .arg_list = fn_arg_list }, .span = fn_span };
+    struct type_span fn_tysp = { .type = { .kind = TY_FN, .arg_list = fn_arg_list }, .span = fn_span };
     struct symbol fn_sym = { .ident_tok = *name_tok, .tysp = fn_tysp };
     // TODO: check for an existing definition or a conflicting forward declaration
     push_symbol(ctx, fn_sym);
@@ -1490,7 +1490,7 @@ compile_let_expr(struct context *ctx) {
         switch (expr_tysp.type.kind) {
         case TY_UNIT:
         case TY_NEVER:
-        case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
+        case TY_FN: assert(!"not implemented"); // TODO: implement
         case TY_CONST_INT: {
             struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp };
             push_symbol(ctx, var_sym);
@@ -1519,7 +1519,7 @@ compile_var_expr(struct context *ctx) {
     switch (result_type.kind) {
     case TY_UNIT:
     case TY_NEVER:
-    case TY_CONST_FN: assert(!"not implemented"); // TODO: implement
+    case TY_FN: assert(!"not implemented"); // TODO: implement
     case TY_CONST_INT: break;
     case TY_INT: emit_load_var(ctx, sym_node->sym.var_stack_offset); break;
     }
@@ -2054,7 +2054,7 @@ compile_fn_call(struct context *ctx) {
     struct symbol_node *fn_sym_node = find_symbol_node(ctx, name_str);
     if (fn_sym_node == NULL) { fail_undefined_fn(ctx, name_tok); }
     struct type_span fn_tysp = fn_sym_node->sym.tysp;
-    if (fn_tysp.type.kind != TY_CONST_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_sym_node->sym.ident_tok, fn_tysp); }
+    if (fn_tysp.type.kind != TY_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_sym_node->sym.ident_tok, fn_tysp); }
     // TODO: check argument types against parameter types
     struct type_node *return_type_node = fn_tysp.type.arg_list;
     for (; return_type_node->next != NULL; return_type_node = return_type_node->next) {}
