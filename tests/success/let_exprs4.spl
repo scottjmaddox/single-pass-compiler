@@ -45,7 +45,7 @@ const main = fn() -> i64 {
         // Check both the shifted w and z.
         // w should be 77, z should be 73. If both match, return 0; otherwise 1.
         if w == 77 && z == 73 {
-            0
+            0:i64
         } else {
             1
         }

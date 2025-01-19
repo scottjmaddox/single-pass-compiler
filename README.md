@@ -107,9 +107,11 @@ reserved_number =
 - [x] test `fail_const_int_div_by_zero`
 - [x] test `fail_const_int_rem_by_zero`
 - [x] test assembly of `&&`, `||` with consts
-- [ ] test assembly of `if` with consts
+- [x] test assembly of `if` with consts
+  - [x] fix: `if 0 { 2 } else { 3 }` pushing `2`
+- [x] fix: non-const if should not return TY_CONST_INT
 - [ ] test parsing / emission of i64 minimum value
-- [ ] test that "0" { "0" } dec_literal is reserved
+- [ ] test that `"0" dec_literal` is reserved
 - [ ] test that 0b0 has type `u1`
 - [ ] test that 0o0 has type `u3`
 - [ ] test that 0x0 has type `u4`
