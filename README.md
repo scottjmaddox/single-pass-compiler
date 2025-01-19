@@ -110,7 +110,7 @@ reserved_number =
 - [x] test assembly of `if` with consts
   - [x] fix: `if 0 { 2 } else { 3 }` pushing `2`
 - [x] fix: non-const if should not return TY_CONST_INT
-- [ ] test parsing / emission of i64 minimum value
+- [x] test parsing / emission of i64 minimum value
 - [ ] test that `"0" dec_literal` is reserved
 - [ ] test that 0b0 has type `u1`
 - [ ] test that 0o0 has type `u3`
