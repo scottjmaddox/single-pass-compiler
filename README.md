@@ -106,7 +106,8 @@ reserved_number =
 - [x] test `fail_invalid_type_for_arithmetic`
 - [x] test `fail_const_int_div_by_zero`
 - [x] test `fail_const_int_rem_by_zero`
-- [ ] test assembly of `&&`, `||`, and `if` with consts
+- [x] test assembly of `&&`, `||` with consts
+- [ ] test assembly of `if` with consts
 - [ ] test parsing / emission of i64 minimum value
 - [ ] test that "0" { "0" } dec_literal is reserved
 - [ ] test that 0b0 has type `u1`

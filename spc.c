@@ -1167,9 +1167,9 @@ emit_push_int(struct context *ctx, uint64_t value) {
 }
 
 static void
-emit_not_equal_zero(struct context *ctx) {
+emit_int_to_u1(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
-    emit_comment(ctx, "int to bool");
+    emit_comment(ctx, "int to u1");
     emit_pop(ctx, "x0");
     fprintf(ctx->output_file, "\tcmp\tx0, #0\n\tcset\tx0, ne\n");
     emit_push(ctx, "x0");
@@ -1733,7 +1733,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
                     } else if (right_tysp.type.kind == TY_CONST_INT) {
                         result_type = (struct type){ .kind = TY_CONST_INT, .value = (right_tysp.type.value != 0) };
                     } else if (right_tysp.type.kind == TY_INT) {
-                        emit_not_equal_zero(ctx);
+                        if (right_tysp.type.sgnd != false || right_tysp.type.bits != 1) { emit_int_to_u1(ctx); }
                         result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
                     } else {
                         assert(!"unreachable");
@@ -1803,7 +1803,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
                         result_type = (struct type){ .kind = TY_CONST_INT, .value = (right_tysp.type.value != 0) };
                     } else if (right_tysp.type.kind == TY_INT) {
                         // NOTE: RHS is a non-const int; convert to boolean
-                        emit_not_equal_zero(ctx);
+                        if (right_tysp.type.sgnd != false || right_tysp.type.bits != 1) { emit_int_to_u1(ctx); }
                         result_type = (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
                     } else {
                         assert(!"unreachable");

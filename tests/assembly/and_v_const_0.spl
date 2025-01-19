@@ -1,0 +1,2 @@
+const v = fn() -> u1 { 0 }
+const main = fn() -> u1 { v() && 0 }
