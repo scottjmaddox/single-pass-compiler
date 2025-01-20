@@ -94,56 +94,44 @@ reserved_number =
 - [x] change `const main` to `const let main` in preparation for `const` being a modifier
 - [x] measure test coverage
 - [x] `let` type annotations
+- [ ] up to 8 (single-word) function (in) parameters (i.e. passed via registers)
+- [ ] early `return` with value
+- [ ] `loop`, `continue`, and `break` with optional label and value
 - [ ] array type, array literals
 - [ ] slice type, slice literals
+- [ ] byte character literals, i.e. `b'a'`
 - [ ] byte-slice string literals, i.e. `b"Hello"`
-- [ ] up to 8 (single-word) function (in) parameters (i.e. passed via registers)
-- [ ] inout (`name: <->type`) and out (`name: ->type`) parameters
-- [ ] nullable and non-nullable pointer types, with coersion
-  - we'll need them eventually, but perhaps not yet?
-  - and perhaps we'll only allow dereferencing in an `unsafe` block?
+- [ ] `__builtin_print`?
+- [ ] cffi
+- [ ] basic `match` expressions
+- [ ] reserve builtin type idents, e.g. `unit`, `never`, `u[0-9]+`, `i[0-9]+`
+- [ ] add line numbers to error messages
+- [ ] support multi-line span error messages
+- [ ] non-nullable pointer types (no dereferencing, yet)
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
   - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
+- [ ] nullable pointer types, with coersion (no dereferencing, yet)
+- [ ] inout (`name: <->type`) and out (`name: ->type`) parameters
 - [ ] `const let` forward type declarations
 - [ ] `const let` support for `const int`
+- [ ] `const let` function aliases
 - [ ] local `const let` support
 - [ ] `const <expr>`: enforces that the result is a compile-time constant
 - [ ] `const if`: enforces that only one branch's code is emitted
   - but both branches are parsed and type checked
 - [ ] `const for`: compile-time loop unrolling
-- [ ] reserve builtin type idents, e.g. `unit`, `never`, `u1`-`u64`, `i1`-`i64`
-- [ ] rename types to start with capital letter?
-- [ ] add line numbers to error messages
-- [ ] support multi-line span error messages
 - [ ] explicit tail calls?
-- [ ] `return` with value
-- [ ] `loop`, `continue`, and `break` with optional label and value
-- [ ] `match` expressions
-- [ ] function pointers and indirect calls
-- [ ] bool type; `if`, `&&`, `||` expect bool
 - [ ] more than 8 (single-word) function parameters (i.e. passed via the stack)
 - [ ] struct types
-- [ ] `let` pattern matching assignment; returns bool: true on match, false otherwise
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
-- [ ] automatic type promotion?
+- [ ] function pointers and indirect calls
 - [ ] reference types?
-- [ ] local `const`
-- [ ] `const` def aliases
-- [ ] `const` def returns symbol to allow chained defs?
-- [ ] `const` def with compile-time evaluated arithmetic
-- [ ] `const if` for compile-time conditional definitions?
-- [ ] `const loop` for compile-time codegen?
-- [ ] arithmetic fuzz testing (comparing against C with `-ftrapv`)
-- [ ] explicit type conversion
-- [ ] byte character literals
-- [ ] byte string literals
-- [ ] printing via printf?
+- [ ] safe integer downcasting, e.g. `(v:u64 & 0xF):u4`?
+- [ ] unsafe type casting?
 - [ ] warn on unused variable?
-- [ ] compile-time optimization: defer line and col calculation until error?
-    - or store all line idx's in a separate persistent list?
 - [ ] compile-time optimization: intern idents?
-    - using a trie?
-    - benchmark before and after
-- [ ] run-time optimization: push-pop annihilation
+  - using a trie?
+  - benchmark before and after
+- [ ] run-time optimization: window push-pop annihilation
 - [ ] output to stdout on `-o -`
