@@ -15,64 +15,64 @@ _sum:
 	str	x6, [sp, #-16]!	; push
 	str	x7, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-16]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-16]
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-32]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-32]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-48]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-48]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-64]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-64]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-80]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-80]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-96]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-96]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-112]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-112]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; load var
-	ldr	x8, [x29, #-128]
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, [x29, #-128]
+	str	x11, [sp, #-16]!	; push
 	; binary op
-	ldr	x9, [sp], #16	; pop
-	ldr	x8, [sp], #16	; pop
-	add	x8, x8, x9
-	str	x8, [sp, #-16]!	; push
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
 	; pop return value
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
@@ -87,29 +87,29 @@ _main:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
-	ldr	x8, =0x1
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0x1
+	str	x11, [sp, #-16]!	; push
 	ldr	x0, [sp], #16	; pop
-	ldr	x8, =0xffffffffffffffff
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0xffffffffffffffff
+	str	x11, [sp, #-16]!	; push
 	ldr	x1, [sp], #16	; pop
-	ldr	x8, =0x2
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0x2
+	str	x11, [sp, #-16]!	; push
 	ldr	x2, [sp], #16	; pop
-	ldr	x8, =0xfffffffffffffffe
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0xfffffffffffffffe
+	str	x11, [sp, #-16]!	; push
 	ldr	x3, [sp], #16	; pop
-	ldr	x8, =0x3
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0x3
+	str	x11, [sp, #-16]!	; push
 	ldr	x4, [sp], #16	; pop
-	ldr	x8, =0xfffffffffffffffd
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0xfffffffffffffffd
+	str	x11, [sp, #-16]!	; push
 	ldr	x5, [sp], #16	; pop
-	ldr	x8, =0x4
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0x4
+	str	x11, [sp, #-16]!	; push
 	ldr	x6, [sp], #16	; pop
-	ldr	x8, =0xfffffffffffffffc
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0xfffffffffffffffc
+	str	x11, [sp, #-16]!	; push
 	ldr	x7, [sp], #16	; pop
 	; fn call
 	bl	_sum

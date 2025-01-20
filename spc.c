@@ -790,7 +790,7 @@ eprint_type(struct type ty) {
     switch (ty.kind) {
     case TY_UNIT: fprintf(stderr, "unit"); break;
     case TY_NEVER: fprintf(stderr, "never"); break;
-    case TY_FN: assert(!"not implemented"); break; // TODO: implement
+    case TY_FN: assert(!"not implemented"); break;
     case TY_CONST_INT: fprintf(stderr, "const int"); break;
     case TY_INT:
         if (ty.sgnd) {
@@ -1099,8 +1099,8 @@ static void
 emit_load_var(struct context *ctx, int var_stack_offset) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "load var");
-    fprintf(ctx->output_file, "\tldr\tx8, [x29, #%d]\n", var_stack_offset);
-    emit_push_regidx(ctx, 8);
+    fprintf(ctx->output_file, "\tldr\tx11, [x29, #%d]\n", var_stack_offset);
+    emit_push_regidx(ctx, 11);
 }
 
 static void
@@ -1153,7 +1153,7 @@ emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TY return_ty
         case TY_UNIT:
         case TY_NEVER: break;
         case TY_FN:
-        case TY_CONST_INT: assert(!"not implemented"); // TODO: implement
+        case TY_CONST_INT: assert(!"not implemented");
         case TY_INT: emit_push_regidx(ctx, 0); break;
     }
 }
@@ -1173,46 +1173,46 @@ emit_local_forward_branch(struct context *ctx, size_t label) {
 static void
 emit_local_forward_branch_if_zero(struct context *ctx, size_t label) {
     if (ctx->is_dead_code) { return; }
-    emit_pop_regidx(ctx, 8);
-    fprintf(ctx->output_file, "\tcbz\tx8, %zuf\n", label);
+    emit_pop_regidx(ctx, 11);
+    fprintf(ctx->output_file, "\tcbz\tx11, %zuf\n", label);
 }
 
 static void
 emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label) {
     if (ctx->is_dead_code) { return; }
-    emit_pop_regidx(ctx, 8);
-    fprintf(ctx->output_file, "\tcbnz\tx8, %zuf\n", label);
+    emit_pop_regidx(ctx, 11);
+    fprintf(ctx->output_file, "\tcbnz\tx11, %zuf\n", label);
 }
 
 static void
 emit_push_int(struct context *ctx, uint64_t value) {
     if (ctx->is_dead_code) { return; }
     // push the value onto the stack
-    fprintf(ctx->output_file, "\tldr\tx8, =0x%llx\n", value);
-    emit_push_regidx(ctx, 8);
+    fprintf(ctx->output_file, "\tldr\tx11, =0x%llx\n", value);
+    emit_push_regidx(ctx, 11);
 }
 
 static void
 emit_int_to_u1(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "int to u1");
-    emit_pop_regidx(ctx, 8);
-    fprintf(ctx->output_file, "\tcmp\tx8, #0\n\tcset\tx8, ne\n");
-    emit_push_regidx(ctx, 8);
+    emit_pop_regidx(ctx, 11);
+    fprintf(ctx->output_file, "\tcmp\tx11, #0\n\tcset\tx11, ne\n");
+    emit_push_regidx(ctx, 11);
 }
 
 static void
 emit_unary_op(struct context *ctx, enum UNARY_OP op) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "unary op");
-    emit_pop_regidx(ctx, 8);
+    emit_pop_regidx(ctx, 11);
     switch (op) {
     // TODO: abort on neg wrapping
-    case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tx8, x8\n"); break;
-    case UNARY_OP_BITWISE_NOT: fprintf(ctx->output_file, "\tmvn\tx8, x8\n"); break;
-    case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tx8, #0\n\tcset\tx8, eq\n" ); break;
+    case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tx11, x11\n"); break;
+    case UNARY_OP_BITWISE_NOT: fprintf(ctx->output_file, "\tmvn\tx11, x11\n"); break;
+    case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tx11, #0\n\tcset\tx11, eq\n" ); break;
     }
-    emit_push_regidx(ctx, 8);
+    emit_push_regidx(ctx, 11);
 }
 
 static void
@@ -1223,62 +1223,62 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
     emit_comment(ctx, "binary op");
     assert(left.kind == TY_INT && right.kind == TY_INT);
     if (swap) {
-        emit_pop_regidx(ctx, 8);
-        emit_pop_regidx(ctx, 9);
+        emit_pop_regidx(ctx, 11);
+        emit_pop_regidx(ctx, 12);
     } else {
-        emit_pop_regidx(ctx, 9);
-        emit_pop_regidx(ctx, 8);
+        emit_pop_regidx(ctx, 12);
+        emit_pop_regidx(ctx, 11);
     }
     switch (op) {
     case BINARY_OP_TYPE_ANNO: assert(!"unreachable");
-    case BINARY_OP_MUL: fprintf(ctx->output_file, "\tmul\tx8, x8, x9\n"); break;
+    case BINARY_OP_MUL: fprintf(ctx->output_file, "\tmul\tx11, x11, x12\n"); break;
     case BINARY_OP_DIV:
         assert(left.sgnd == right.sgnd);
         if (left.sgnd) {
-            fprintf(ctx->output_file, "\tsdiv\tx8, x8, x9\n");
+            fprintf(ctx->output_file, "\tsdiv\tx11, x11, x12\n");
         } else {
-            fprintf(ctx->output_file, "\tudiv\tx8, x8, x9\n");
+            fprintf(ctx->output_file, "\tudiv\tx11, x11, x12\n");
         }
         break;
     case BINARY_OP_REM:
         assert(left.sgnd == right.sgnd);
         if (left.sgnd) {
-            fprintf(ctx->output_file, "\tsdiv\tx10, x8, x9\n");
-            fprintf(ctx->output_file, "\tmul\tx10, x10, x9\n");
-            fprintf(ctx->output_file, "\tsub\tx8, x8, x10\n");
+            fprintf(ctx->output_file, "\tsdiv\tx13, x11, x12\n");
+            fprintf(ctx->output_file, "\tmul\tx13, x13, x12\n");
+            fprintf(ctx->output_file, "\tsub\tx11, x11, x13\n");
         } else {
-            fprintf(ctx->output_file, "\tudiv\tx10, x8, x9\n");
-            fprintf(ctx->output_file, "\tmul\tx10, x10, x9\n");
-            fprintf(ctx->output_file, "\tsub\tx8, x8, x10\n");
+            fprintf(ctx->output_file, "\tudiv\tx13, x11, x12\n");
+            fprintf(ctx->output_file, "\tmul\tx13, x13, x12\n");
+            fprintf(ctx->output_file, "\tsub\tx11, x11, x13\n");
         }
         break;
-    case BINARY_OP_ADD: fprintf(ctx->output_file, "\tadd\tx8, x8, x9\n"); break;
-    case BINARY_OP_SUB: fprintf(ctx->output_file, "\tsub\tx8, x8, x9\n"); break;
+    case BINARY_OP_ADD: fprintf(ctx->output_file, "\tadd\tx11, x11, x12\n"); break;
+    case BINARY_OP_SUB: fprintf(ctx->output_file, "\tsub\tx11, x11, x12\n"); break;
     case BINARY_OP_SHL:
-        fprintf(ctx->output_file, "\tlsl\tx8, x8, x9\n");
+        fprintf(ctx->output_file, "\tlsl\tx11, x11, x12\n");
         // TODO: mask overflow? or abort?
         break;
     case BINARY_OP_SHR:
         if (left.sgnd) {
-            fprintf(ctx->output_file, "\tasr\tx8, x8, x9\n");
+            fprintf(ctx->output_file, "\tasr\tx11, x11, x12\n");
         } else {
-            fprintf(ctx->output_file, "\tlsr\tx8, x8, x9\n");
+            fprintf(ctx->output_file, "\tlsr\tx11, x11, x12\n");
         }
         break;
-    case BINARY_OP_LT: fprintf(ctx->output_file, "\tcmp\tx8, x9\n\tcset\tx8, lt\n"); break;
-    case BINARY_OP_LE: fprintf(ctx->output_file, "\tcmp\tx8, x9\n\tcset\tx8, le\n"); break;
-    case BINARY_OP_GT: fprintf(ctx->output_file, "\tcmp\tx8, x9\n\tcset\tx8, gt\n"); break;
-    case BINARY_OP_GE: fprintf(ctx->output_file, "\tcmp\tx8, x9\n\tcset\tx8, ge\n"); break;
-    case BINARY_OP_EQ: fprintf(ctx->output_file, "\tcmp\tx8, x9\n\tcset\tx8, eq\n"); break;
-    case BINARY_OP_NE: fprintf(ctx->output_file, "\tcmp\tx8, x9\n\tcset\tx8, ne\n"); break;
-    case BINARY_OP_BITWISE_AND: fprintf(ctx->output_file, "\tand\tx8, x8, x9\n"); break;
-    case BINARY_OP_BITWISE_XOR: fprintf(ctx->output_file, "\teor\tx8, x8, x9\n"); break;
-    case BINARY_OP_BITWISE_OR: fprintf(ctx->output_file, "\torr\tx8, x8, x9\n"); break;
+    case BINARY_OP_LT: fprintf(ctx->output_file, "\tcmp\tx11, x12\n\tcset\tx11, lt\n"); break;
+    case BINARY_OP_LE: fprintf(ctx->output_file, "\tcmp\tx11, x12\n\tcset\tx11, le\n"); break;
+    case BINARY_OP_GT: fprintf(ctx->output_file, "\tcmp\tx11, x12\n\tcset\tx11, gt\n"); break;
+    case BINARY_OP_GE: fprintf(ctx->output_file, "\tcmp\tx11, x12\n\tcset\tx11, ge\n"); break;
+    case BINARY_OP_EQ: fprintf(ctx->output_file, "\tcmp\tx11, x12\n\tcset\tx11, eq\n"); break;
+    case BINARY_OP_NE: fprintf(ctx->output_file, "\tcmp\tx11, x12\n\tcset\tx11, ne\n"); break;
+    case BINARY_OP_BITWISE_AND: fprintf(ctx->output_file, "\tand\tx11, x11, x12\n"); break;
+    case BINARY_OP_BITWISE_XOR: fprintf(ctx->output_file, "\teor\tx11, x11, x12\n"); break;
+    case BINARY_OP_BITWISE_OR: fprintf(ctx->output_file, "\torr\tx11, x11, x12\n"); break;
     case BINARY_OP_LOGICAL_AND:
     case BINARY_OP_LOGICAL_OR:
         assert(!"unreachable");
     }
-    emit_push_regidx(ctx, 8);
+    emit_push_regidx(ctx, 11);
 }
 
 static void
@@ -1314,7 +1314,7 @@ is_subtype(struct type left, struct type right) {
     case TY_NEVER: return true;
     case TY_FN:
         if (right.kind == TY_FN) {
-            assert(!"not implemented"); // TODO: implement
+            assert(!"not implemented");
         }
         break;
     case TY_CONST_INT:
@@ -1363,7 +1363,7 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     switch (from.type.kind) {
     case TY_UNIT: break;
     case TY_NEVER: break;
-    case TY_FN: assert(!"not implemented"); // TODO: implement
+    case TY_FN: assert(!"not implemented");
     case TY_CONST_INT:
         if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
          break;
@@ -1540,15 +1540,15 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             switch (type_node->tysp.type.kind) {
             case TY_UNIT:
             case TY_NEVER: break;
-            case TY_FN: assert(!"not implemented"); // TODO: implement
-            case TY_CONST_INT: assert(!"not implemented"); // TODO: implement
+            case TY_FN: assert(!"not implemented");
+            case TY_CONST_INT: assert(!"not implemented");
             case TY_INT:
                 if (regidx < 8) {  // NOTE: the first 8 parameters are passed in registers
                     emit_push_regidx(ctx, regidx++);
                     ctx->stack_offset -= 16;
                     sym_node->sym.var_stack_offset = ctx->stack_offset;
-                } else {
-                    assert(!"not implemented"); // TODO: implement
+                } else {  // NOTE: the rest are passed in 8-byte stack slots
+                    assert(!"not implemented"); // TODO
                 }
                 break;
             }
@@ -1599,7 +1599,7 @@ compile_let_expr(struct context *ctx) {
         switch (expr_tysp.type.kind) {
         case TY_UNIT:
         case TY_NEVER:
-        case TY_FN: assert(!"not implemented"); // TODO: implement
+        case TY_FN: assert(!"not implemented");
         case TY_CONST_INT: {
             struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp };
             push_symbol(ctx, var_sym);
@@ -1626,7 +1626,7 @@ compile_var_expr(struct context *ctx) {
     switch (result_type.kind) {
     case TY_UNIT:
     case TY_NEVER:
-    case TY_FN: assert(!"not implemented"); // TODO: implement
+    case TY_FN: assert(!"not implemented");
     case TY_CONST_INT: break;
     case TY_INT: emit_load_var(ctx, sym_node->sym.var_stack_offset); break;
     }
@@ -2171,13 +2171,13 @@ compile_fn_call(struct context *ctx) {
         switch (coerced_arg_type.kind) {
         case TY_UNIT:
         case TY_NEVER: break;
-        case TY_FN: assert(!"not implemented"); // TODO: implement
-        case TY_CONST_INT: assert(!"not implemented"); // TODO: implement
+        case TY_FN: assert(!"not implemented");
+        case TY_CONST_INT: assert(!"not implemented");
         case TY_INT:
             if (regidx < 8) {  // NOTE: the first 8 parameters are passed in registers
                 emit_pop_regidx(ctx, regidx++);
             } else {
-                assert(!"not implemented"); // TODO: implement
+                assert(!"not implemented"); // TODO
             }
             break;
         }

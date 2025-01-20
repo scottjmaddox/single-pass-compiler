@@ -6,8 +6,8 @@ _v:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
-	ldr	x8, =0x0
-	str	x8, [sp, #-16]!	; push
+	ldr	x11, =0x0
+	str	x11, [sp, #-16]!	; push
 	; pop return value
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue

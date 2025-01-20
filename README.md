@@ -98,7 +98,7 @@ reserved_number =
 - [x] measure test coverage
 - [x] `let` type annotations
 - [x] up to 8 (single-word) function parameters (passed via registers)
-- [ ] test coverage diffs
+- [ ] more than 8 (single-word) function parameters (i.e. passed via the stack)
 - [ ] function types and indirect calls
 - [ ] `loop`, `continue`, and `break` with optional label and value
 - [ ] early `return` with value
@@ -135,10 +135,10 @@ reserved_number =
   - should normal functions be defined with just `let name = fn(...`?
     - that way `const let = ...` is always equivalent to `let = const ...`?
 - [ ] explicit tail calls?
-- [ ] more than 8 (single-word) function parameters (i.e. passed via the stack)
 - [ ] struct types
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
+- [ ] implicitly staticly typed context (`ctx`) parameters/arguments
 - [ ] reference types?
 - [ ] safe integer downcasting, e.g. `(v:u64 & 0xF):u4`?
 - [ ] unsafe type casting?
