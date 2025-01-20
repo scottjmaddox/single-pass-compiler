@@ -25,7 +25,7 @@ spc: spc.c
 
 test: test-assembly test-failure test-success
 	@llvm-profdata merge -o tests.profdata tests/*/*.profraw
-	llvm-cov show ./spc -instr-profile=tests.profdata -format=html -output-dir=coverage
+	llvm-cov show ./spc -instr-profile=tests.profdata -format=html -output-dir=coverage --show-branches=count
 
 
 test-assembly:
