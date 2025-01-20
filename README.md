@@ -12,7 +12,7 @@ make
 
 ## Grammar
 
-The currently supported grammar, in extended Backus–Naur form (EBNF):
+The currently supported grammar, in [extended Backus–Naur form (EBNF)](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form):
 
 ```ebnf
 program = { const_let } ;
