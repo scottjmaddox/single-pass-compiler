@@ -1,0 +1,2 @@
+const let foo = fn() -> u32 { 1 }
+const let foo = fn() -> u32 { 1 }

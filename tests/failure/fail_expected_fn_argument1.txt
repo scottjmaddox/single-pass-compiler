@@ -1,0 +1,10 @@
+error: unexpected token RIGHT_PAREN at:
+ --> tests/failure/fail_expected_fn_argument1.spl:3:36
+  |
+  | const let main = fn() -> i64 { sub() }
+  |                                    ^
+  expected a function argument with type `i64` from:
+ --> tests/failure/fail_expected_fn_argument1.spl:1:23
+  |
+  | const let sub = fn(a: i64, b: i64) -> i64 { a - b }
+  |                       ^^^

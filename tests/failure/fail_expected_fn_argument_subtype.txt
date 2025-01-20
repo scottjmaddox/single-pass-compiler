@@ -1,0 +1,13 @@
+error: expected type `u64` from:
+ --> tests/failure/fail_expected_fn_argument_subtype.spl:3:36
+  |
+  | const let main = fn() -> i64 { sub(1:u64, 1:u64) }
+  |                                    ^^^^^
+  to be a subtype of type `i64` from:
+ --> tests/failure/fail_expected_fn_argument_subtype.spl:1:23
+  |
+  | const let sub = fn(a: i64, b: i64) -> i64 { a - b }
+  |                       ^^^
+  note: type A is a subtype of type B if and only if:
+  - every value that A can represent is representable by B, and
+  - type A supports all the operations that type B supports

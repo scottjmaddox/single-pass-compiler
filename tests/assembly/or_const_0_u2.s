@@ -6,12 +6,11 @@ _v:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
-	ldr	x0, =0x0
-	str	x0, [sp, #-16]!	; push
+	ldr	x8, =0x0
+	str	x8, [sp, #-16]!	; push
 	; pop return value
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
-	sub	sp, sp, #0
 	ldp	x29, x30, [sp], #16
 	ret
 	.cfi_endproc
@@ -26,14 +25,13 @@ _main:
 	bl	_v
 	str	x0, [sp, #-16]!	; push
 	; int to u1
-	ldr	x0, [sp], #16	; pop
-	cmp	x0, #0
-	cset	x0, ne
-	str	x0, [sp, #-16]!	; push
+	ldr	x8, [sp], #16	; pop
+	cmp	x8, #0
+	cset	x8, ne
+	str	x8, [sp, #-16]!	; push
 	; pop return value
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
-	sub	sp, sp, #0
 	ldp	x29, x30, [sp], #16
 	ret
 	.cfi_endproc

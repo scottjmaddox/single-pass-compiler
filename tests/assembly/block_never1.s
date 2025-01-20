@@ -10,7 +10,6 @@ _main:
 	; pop return value
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
-	sub	sp, sp, #0
 	ldp	x29, x30, [sp], #16
 	ret
 	.cfi_endproc

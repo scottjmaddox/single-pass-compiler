@@ -1,0 +1,10 @@
+error: redefinition of `foo`:
+ --> tests/failure/fail_redefinition.spl:2:11
+  |
+  | const let foo = fn() -> u32 { 1 }
+  |           ^^^
+  previously defined here:
+ --> tests/failure/fail_redefinition.spl:1:11
+  |
+  | const let foo = fn() -> u32 { 1 }
+  |           ^^^

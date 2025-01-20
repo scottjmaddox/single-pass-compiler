@@ -17,13 +17,16 @@ The currently supported grammar, in [extended Backus–Naur form (EBNF)](https:/
 ```ebnf
 program = { const_let } ;
 const_let = "const" "let" ident "=" fn_def ;
-fn_def = "fn" "(" ")" "->" type_expr block ;
+fn_def = "fn" "(" [ fn_params ] ")" "->" type_expr block ;
+fn_params = fn_param { "," fn_param } ;
+fn_param = ident ":" type_expr ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
 expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident [ ":" type_expr ] "=" expr ;
-fn_call = ident "(" ")" ;
+fn_call = ident "(" fn_args ")" ;
+fn_args = expr { "," expr } ;
 var_expr = ident ;
 op_expr = prefix_op expr | expr infix_op expr ;
 
@@ -94,25 +97,31 @@ reserved_number =
 - [x] change `const main` to `const let main` in preparation for `const` being a modifier
 - [x] measure test coverage
 - [x] `let` type annotations
-- [ ] up to 8 (single-word) function (in) parameters (i.e. passed via registers)
-- [ ] early `return` with value
+- [x] up to 8 (single-word) function parameters (passed via registers)
+- [ ] test coverage diffs
+- [ ] function types and indirect calls
 - [ ] `loop`, `continue`, and `break` with optional label and value
+- [ ] early `return` with value
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte character literals, i.e. `b'a'`
 - [ ] byte-slice string literals, i.e. `b"Hello"`
 - [ ] `__builtin_print`?
-- [ ] cffi
 - [ ] basic `match` expressions
 - [ ] reserve builtin type idents, e.g. `unit`, `never`, `u[0-9]+`, `i[0-9]+`
-- [ ] add line numbers to error messages
-- [ ] support multi-line span error messages
-- [ ] non-nullable pointer types (no dereferencing, yet)
+- [ ] non-nullable pointer types (`*type`) (no dereferencing, yet)
+- [ ] cffi
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
   - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
-- [ ] nullable pointer types, with coersion (no dereferencing, yet)
-- [ ] inout (`name: <->type`) and out (`name: ->type`) parameters
-- [ ] `const let` forward type declarations
+- [ ] add line numbers to error messages
+- [ ] support multi-line span error messages
+- [ ] `let name: type` forward variable declarations
+- [ ] in (`name: <-type`), inout (`name: <->type`) and out (`name: ->type`) parameters
+  - the compiler can optionally turn in (`name: <-type`) parameters into pointers
+- [ ] nullable pointer types (`?*type`), with coersion
+- [ ] optional in (`name: ?<-type`), inout (`name: ?<->type`), and out (`name: ?->type`) parameters?
+- [ ] `const let name: type` forward function declarations
+  - [ ] test `fail_conflicting_forward_decl_type`
 - [ ] `const let` support for `const int`
 - [ ] `const let` function aliases
 - [ ] local `const let` support
@@ -120,12 +129,16 @@ reserved_number =
 - [ ] `const if`: enforces that only one branch's code is emitted
   - but both branches are parsed and type checked
 - [ ] `const for`: compile-time loop unrolling
+- [ ] `const fn`: function that can be evaluated at compile time?
+  - or should it just be any function that expects or outputs a `const type`?
+    - or should we take the Zig approach of monomorphizing over const arguments?
+  - should normal functions be defined with just `let name = fn(...`?
+    - that way `const let = ...` is always equivalent to `let = const ...`?
 - [ ] explicit tail calls?
 - [ ] more than 8 (single-word) function parameters (i.e. passed via the stack)
 - [ ] struct types
 - [ ] non-copy, non-move, non-drop types
 - [ ] copy, move, drop methods
-- [ ] function pointers and indirect calls
 - [ ] reference types?
 - [ ] safe integer downcasting, e.g. `(v:u64 & 0xF):u4`?
 - [ ] unsafe type casting?
