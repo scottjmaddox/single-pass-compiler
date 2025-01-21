@@ -21,9 +21,10 @@ _main:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
-	; fn call
-	bl	_v
+	; fn call prep
+	bl	_v	; fn call
 	str	x0, [sp, #-16]!	; push
+	; fn call end
 	; int to u1
 	ldr	x11, [sp], #16	; pop
 	cmp	x11, #0

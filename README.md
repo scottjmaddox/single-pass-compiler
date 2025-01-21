@@ -68,6 +68,7 @@ reserved_number =
 - [Simple but Powerful Pratt Parsing](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html)
 - [Wikipedia: Operators in C and C++: Operator precedence](https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence)
 - [Writing ARM64 code for Apple platforms](https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms)
+- [Procedure Call Standard for the Arm® 64-bit Architecture (AArch64)](https://student.cs.uwaterloo.ca/~cs452/docs/rpi4b/aapcs64.pdf)
 
 ## TODO
 
@@ -98,17 +99,19 @@ reserved_number =
 - [x] measure test coverage
 - [x] `let` type annotations
 - [x] up to 8 (single-word) function parameters (passed via registers)
-- [ ] more than 8 (single-word) function parameters (i.e. passed via the stack)
-- [ ] function types and indirect calls
-- [ ] `loop`, `continue`, and `break` with optional label and value
-- [ ] early `return` with value
+- [x] more than 8 (single-word) function parameters (passed via the stack)
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte character literals, i.e. `b'a'`
 - [ ] byte-slice string literals, i.e. `b"Hello"`
 - [ ] `__builtin_print`?
+- [ ] `loop`, `continue`, and `break` with optional label and value
+- [ ] early `return` with value
+- [ ] function types and indirect calls
 - [ ] basic `match` expressions
 - [ ] reserve builtin type idents, e.g. `unit`, `never`, `u[0-9]+`, `i[0-9]+`
+- [ ] in (`name: <-type`), inout (`name: <->type`) and out (`name: ->type`) parameters, passed as pointers
+- [ ] optional in (`name: ?<-type`), inout (`name: ?<->type`), and out (`name: ?->type`) parameters?
 - [ ] non-nullable pointer types (`*type`) (no dereferencing, yet)
 - [ ] cffi
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
@@ -116,10 +119,7 @@ reserved_number =
 - [ ] add line numbers to error messages
 - [ ] support multi-line span error messages
 - [ ] `let name: type` forward variable declarations
-- [ ] in (`name: <-type`), inout (`name: <->type`) and out (`name: ->type`) parameters
-  - the compiler can optionally turn in (`name: <-type`) parameters into pointers
 - [ ] nullable pointer types (`?*type`), with coersion
-- [ ] optional in (`name: ?<-type`), inout (`name: ?<->type`), and out (`name: ?->type`) parameters?
 - [ ] `const let name: type` forward function declarations
   - [ ] test `fail_conflicting_forward_decl_type`
 - [ ] `const let` support for `const int`

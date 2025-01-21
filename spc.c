@@ -248,15 +248,17 @@ enum TY {
 struct type {
     enum TY kind;
     union {
-        // `arg_list` stores type constructor arguments.
-        // For TY_FN, that's the parameter types followed by the return type.
-        struct type_node *arg_list;
-        // For TY_CONST_INT, `value` stores the constant value.
-        __int128_t value;
-        // For TY_INT, `bits` stores the number of bits.
+        // For TY_FN:
+        struct {
+            struct type_node *arg_list; // the parameter types followed by the return type
+            int stacked_args_size;
+        };
+        // For TY_CONST_INT:
+        __int128_t value; // the constant value
+        // For TY_INT:
         struct {
             bool sgnd; // true for signed, false for unsigned
-            unsigned int bits;
+            unsigned int bits; // bits in the integer type
         };
     };
 };
@@ -276,7 +278,7 @@ struct symbol {
     struct token ident_tok;
     struct type_span tysp;
     bool is_forward_decl;
-    int var_stack_offset;
+    int var_frame_offset; // variable offset from the frame pointer (x29)
 };
 
 struct symbol_node {
@@ -309,7 +311,7 @@ struct context {
     struct symbol_node *free_symbol_nodes;
     struct scope_node *free_scope_nodes;
     // Compiler state
-    int stack_offset; // current stack offset from the frame pointer in x29
+    int cum_var_frame_offset; // cumulative variable offset from the frame pointer (x29)
     size_t local_label_count;
     struct scope_node *scope_stack;
     bool is_dead_code;
@@ -1062,17 +1064,23 @@ emit_comment(struct context *ctx, char *comment) {
 }
 
 static void
-emit_push_regidx(struct context *ctx, int regidx) {
+emit_push(struct context *ctx, int regidx) {
     if (ctx->is_dead_code) { return; }
     // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
     fprintf(ctx->output_file, "\tstr\tx%d, [sp, #-16]!\t; push\n", regidx);
 }
 
 static void
-emit_pop_regidx(struct context *ctx, int regidx) {
+emit_pop(struct context *ctx, int regidx) {
     if (ctx->is_dead_code) { return; }
     // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
     fprintf(ctx->output_file, "\tldr\tx%d, [sp], #16\t; pop\n", regidx);
+}
+
+static void
+emit_store_at_stack_offset(struct context *ctx, int regidx, int stack_offset) {
+    if (ctx->is_dead_code) { return; }
+    fprintf(ctx->output_file, "\tstr\tx%d, [sp, #%d]\t; store\n", regidx, stack_offset);
 }
 
 static void
@@ -1096,11 +1104,10 @@ emit_drop_type(struct context *ctx, enum TY ty) {
 }
 
 static void
-emit_load_var(struct context *ctx, int var_stack_offset) {
+emit_load_at_frame_offset(struct context *ctx, int frame_offset) {
     if (ctx->is_dead_code) { return; }
-    emit_comment(ctx, "load var");
-    fprintf(ctx->output_file, "\tldr\tx11, [x29, #%d]\n", var_stack_offset);
-    emit_push_regidx(ctx, 11);
+    fprintf(ctx->output_file, "\tldr\tx11, [x29, #%d]\t; load\n", frame_offset);
+    emit_push(ctx, 11);
 }
 
 static void
@@ -1118,7 +1125,13 @@ emit_fn_prologue(struct context *ctx, struct str name) {
         (int)name.len, name.ptr,
         (int)name.len, name.ptr
     );
-    ctx->stack_offset = 0;
+    ctx->cum_var_frame_offset = 0;
+}
+
+static void
+emit_adjust_stack_pointer(struct context *ctx, int amount) {
+    if (ctx->is_dead_code) { return; }
+    fprintf(ctx->output_file, "\tadd\tsp, sp, #%d\t; adjust stack pointer\n", amount);
 }
 
 static void
@@ -1132,11 +1145,11 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
     case TY_FN:
     case TY_CONST_INT:
         assert(!"unreachable"); break;
-    case TY_INT: emit_pop_regidx(ctx, 0); break;
+    case TY_INT: emit_pop(ctx, 0); break;
     }
     emit_comment(ctx, "fn epilogue");
-    if (ctx->stack_offset != 0) {
-        fprintf(ctx->output_file, "\tsub\tsp, sp, #%d\n", ctx->stack_offset);
+    if (ctx->cum_var_frame_offset != 0) {
+        emit_adjust_stack_pointer(ctx, -ctx->cum_var_frame_offset);
     }
     fprintf(ctx->output_file,
         "\tldp\tx29, x30, [sp], #16\n"
@@ -1145,17 +1158,9 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
 }
 
 static void
-emit_fn_call(struct context *ctx, char *name, size_t name_len, enum TY return_type) {
+emit_fn_call(struct context *ctx, char *name, size_t name_len) {
     if (ctx->is_dead_code) { return; }
-    emit_comment(ctx, "fn call");
-    fprintf(ctx->output_file, "\tbl\t_%.*s\n", (int)name_len, name);
-    switch (return_type) {
-        case TY_UNIT:
-        case TY_NEVER: break;
-        case TY_FN:
-        case TY_CONST_INT: assert(!"not implemented");
-        case TY_INT: emit_push_regidx(ctx, 0); break;
-    }
+    fprintf(ctx->output_file, "\tbl\t_%.*s\t; fn call\n", (int)name_len, name);
 }
 
 static void
@@ -1173,14 +1178,14 @@ emit_local_forward_branch(struct context *ctx, size_t label) {
 static void
 emit_local_forward_branch_if_zero(struct context *ctx, size_t label) {
     if (ctx->is_dead_code) { return; }
-    emit_pop_regidx(ctx, 11);
+    emit_pop(ctx, 11);
     fprintf(ctx->output_file, "\tcbz\tx11, %zuf\n", label);
 }
 
 static void
 emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label) {
     if (ctx->is_dead_code) { return; }
-    emit_pop_regidx(ctx, 11);
+    emit_pop(ctx, 11);
     fprintf(ctx->output_file, "\tcbnz\tx11, %zuf\n", label);
 }
 
@@ -1189,30 +1194,30 @@ emit_push_int(struct context *ctx, uint64_t value) {
     if (ctx->is_dead_code) { return; }
     // push the value onto the stack
     fprintf(ctx->output_file, "\tldr\tx11, =0x%llx\n", value);
-    emit_push_regidx(ctx, 11);
+    emit_push(ctx, 11);
 }
 
 static void
 emit_int_to_u1(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "int to u1");
-    emit_pop_regidx(ctx, 11);
+    emit_pop(ctx, 11);
     fprintf(ctx->output_file, "\tcmp\tx11, #0\n\tcset\tx11, ne\n");
-    emit_push_regidx(ctx, 11);
+    emit_push(ctx, 11);
 }
 
 static void
 emit_unary_op(struct context *ctx, enum UNARY_OP op) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "unary op");
-    emit_pop_regidx(ctx, 11);
+    emit_pop(ctx, 11);
     switch (op) {
     // TODO: abort on neg wrapping
     case UNARY_OP_NEG: fprintf(ctx->output_file, "\tneg\tx11, x11\n"); break;
     case UNARY_OP_BITWISE_NOT: fprintf(ctx->output_file, "\tmvn\tx11, x11\n"); break;
     case UNARY_OP_LOGICAL_NOT: fprintf(ctx->output_file, "\tcmp\tx11, #0\n\tcset\tx11, eq\n" ); break;
     }
-    emit_push_regidx(ctx, 11);
+    emit_push(ctx, 11);
 }
 
 static void
@@ -1223,11 +1228,11 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
     emit_comment(ctx, "binary op");
     assert(left.kind == TY_INT && right.kind == TY_INT);
     if (swap) {
-        emit_pop_regidx(ctx, 11);
-        emit_pop_regidx(ctx, 12);
+        emit_pop(ctx, 11);
+        emit_pop(ctx, 12);
     } else {
-        emit_pop_regidx(ctx, 12);
-        emit_pop_regidx(ctx, 11);
+        emit_pop(ctx, 12);
+        emit_pop(ctx, 11);
     }
     switch (op) {
     case BINARY_OP_TYPE_ANNO: assert(!"unreachable");
@@ -1278,7 +1283,7 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
     case BINARY_OP_LOGICAL_OR:
         assert(!"unreachable");
     }
-    emit_push_regidx(ctx, 11);
+    emit_push(ctx, 11);
 }
 
 static void
@@ -1462,11 +1467,13 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     struct symbol_node *param_sym_list_end = NULL;
     struct type_node *fn_type_arg_list_start = NULL;
     struct type_node *fn_type_arg_list_end = NULL;
+    int raw_args_size = 0;
     if (peek_token_kind(ctx) != TOKEN_RIGHT_PAREN) {
         struct token param_name_tok;
         take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
         take_token_expect_kind(ctx, NULL, TOKEN_COLON);
         struct type_span param_tysp = parse_type(ctx);
+        if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
         struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
         *param_sym_node = (struct symbol_node){ .next = NULL,
             .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
@@ -1482,6 +1489,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
             take_token_expect_kind(ctx, NULL, TOKEN_COLON);
             struct type_span param_tysp = parse_type(ctx);
+            if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
             struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
             *param_sym_node = (struct symbol_node){ .next = NULL,
                 .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
@@ -1492,6 +1500,9 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             fn_type_arg_list_end->next = param_type_node;
             fn_type_arg_list_end = param_type_node;
         }
+    }
+    if (raw_args_size > 8 * 8) {
+        fn_tysp.type.stacked_args_size = (raw_args_size - 8 * 8 + 15) / 16 * 16; // align to 16 bytes
     }
     struct token params_end_tok;
     take_token_expect_kind(ctx, &params_end_tok, TOKEN_RIGHT_PAREN);
@@ -1526,11 +1537,9 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             fail_conflicting_forward_decl_type(ctx, fn_sym, existing_sym_node->sym);
         }
     }
-    push_symbol(ctx, fn_sym);
-    ctx->local_label_count = 0;
-    push_scope(ctx);
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     int regidx = 0;
+    int stacked_arg_frame_offset = 16; // NOTE: the first 16 bytes hold the frame pointer and return address
     struct symbol_node *sym_node = param_sym_list_start;
     for (
         struct type_node *type_node = fn_type_arg_list_start;
@@ -1543,16 +1552,21 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             case TY_FN: assert(!"not implemented");
             case TY_CONST_INT: assert(!"not implemented");
             case TY_INT:
-                if (regidx < 8) {  // NOTE: the first 8 parameters are passed in registers
-                    emit_push_regidx(ctx, regidx++);
-                    ctx->stack_offset -= 16;
-                    sym_node->sym.var_stack_offset = ctx->stack_offset;
-                } else {  // NOTE: the rest are passed in 8-byte stack slots
-                    assert(!"not implemented"); // TODO
+                if (regidx < 8) { // NOTE: the first 8 parameters are passed in registers
+                    emit_push(ctx, regidx);
+                    regidx += 1;
+                    ctx->cum_var_frame_offset -= 16;
+                    sym_node->sym.var_frame_offset = ctx->cum_var_frame_offset;
+                } else { // NOTE: the rest are passed on the stack
+                    sym_node->sym.var_frame_offset = stacked_arg_frame_offset;
+                    stacked_arg_frame_offset += 8;
                 }
                 break;
             }
     }
+    push_symbol(ctx, fn_sym);
+    ctx->local_label_count = 0;
+    push_scope(ctx);
     if (param_sym_list_end != NULL) {
         assert(param_sym_list_start != NULL);
         param_sym_list_end->next = ctx->scope_stack->symbol_list;
@@ -1605,8 +1619,8 @@ compile_let_expr(struct context *ctx) {
             push_symbol(ctx, var_sym);
         } break;
         case TY_INT: {
-            ctx->stack_offset -= 16;
-            struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp, .var_stack_offset = ctx->stack_offset };
+            ctx->cum_var_frame_offset -= 16;
+            struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp, .var_frame_offset = ctx->cum_var_frame_offset };
             push_symbol(ctx, var_sym);
         } break;
         }
@@ -1628,7 +1642,7 @@ compile_var_expr(struct context *ctx) {
     case TY_NEVER:
     case TY_FN: assert(!"not implemented");
     case TY_CONST_INT: break;
-    case TY_INT: emit_load_var(ctx, sym_node->sym.var_stack_offset); break;
+    case TY_INT: emit_load_at_frame_offset(ctx, sym_node->sym.var_frame_offset); break;
     }
     return (struct type_span){ .type = result_type, .span = token_span(ctx, name_tok) };
 }
@@ -2158,9 +2172,12 @@ compile_fn_call(struct context *ctx) {
     if (fn_sym_node == NULL) { fail_undefined_fn(ctx, name_tok); }
     struct type_span fn_tysp = fn_sym_node->sym.tysp;
     if (fn_tysp.type.kind != TY_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_sym_node->sym.ident_tok, fn_tysp); }
+    emit_comment(ctx, "fn call prep");
+    if (fn_tysp.type.stacked_args_size != 0) { emit_adjust_stack_pointer(ctx, -fn_tysp.type.stacked_args_size); }
+    int regidx = 0;
+    int stacked_arg_offset = 0;
     struct type_node *type_node = fn_tysp.type.arg_list;
     assert(type_node != NULL);
-    int regidx = 0;
     for (; type_node->next != NULL; type_node = type_node->next) {
         enum TOKEN next_tok_kind = peek_token_kind(ctx);
         if (next_tok_kind == TOKEN_COMMA || next_tok_kind == TOKEN_RIGHT_PAREN) {
@@ -2174,10 +2191,14 @@ compile_fn_call(struct context *ctx) {
         case TY_FN: assert(!"not implemented");
         case TY_CONST_INT: assert(!"not implemented");
         case TY_INT:
-            if (regidx < 8) {  // NOTE: the first 8 parameters are passed in registers
-                emit_pop_regidx(ctx, regidx++);
-            } else {
-                assert(!"not implemented"); // TODO
+            if (regidx < 8) { // NOTE: the first 8 parameters are passed in registers
+                emit_pop(ctx, regidx);
+                regidx += 1;
+            } else { // NOTE: the rest are passed on the stack
+                emit_pop(ctx, 9);
+                assert(stacked_arg_offset < fn_tysp.type.stacked_args_size);
+                emit_store_at_stack_offset(ctx, 9, stacked_arg_offset);
+                stacked_arg_offset += 8;
             }
             break;
         }
@@ -2193,7 +2214,16 @@ compile_fn_call(struct context *ctx) {
     struct token right_paren_tok;
     take_token_expect_kind(ctx, &right_paren_tok, TOKEN_RIGHT_PAREN);
     struct span fn_call_span = { .start = name_tok.loc, .end = token_end(ctx, right_paren_tok) };
-    emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len, return_type.kind);
+    emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len);
+    if (fn_tysp.type.stacked_args_size != 0) { emit_adjust_stack_pointer(ctx, fn_tysp.type.stacked_args_size); }
+    switch (return_type.kind) {
+        case TY_UNIT:
+        case TY_NEVER: break;
+        case TY_FN:
+        case TY_CONST_INT: assert(!"not implemented");
+        case TY_INT: emit_push(ctx, 0); break;
+    }
+    emit_comment(ctx, "fn call end");
     return (struct type_span){ .type = return_type, .span = fn_call_span };
 }
 
