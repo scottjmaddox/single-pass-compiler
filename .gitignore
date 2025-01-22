@@ -10,6 +10,9 @@
 /tests/assembly/*
 !/tests/assembly/*.spl
 !/tests/assembly/*.s
+/tests/cffi/*
+!/tests/cffi/*.c
+!/tests/cffi/*.spl
 /tests/failure/*
 !/tests/failure/*.spl
 !/tests/failure/*.txt

@@ -1,15 +1,19 @@
 .PHONY: all clean test test-failure test-success
 
 TEST_ASSEMBLY_SPL_FILES := $(wildcard tests/assembly/*.spl)
+TEST_CFFI_SPL_FILES := $(wildcard tests/cffi/*.spl)
 TEST_FAILURE_SPL_FILES := $(wildcard tests/failure/*.spl)
 TEST_SUCCESS_SPL_FILES := $(wildcard tests/success/*.spl)
 
+TEST_CFFI_C_FILES := $(TEST_CFFI_SPL_FILES:.spl=.c)
+TEST_CFFI_SPL_ASM_FILES := $(TEST_CFFI_SPL_FILES:.spl=.s)
 TEST_SUCCESS_SPL_ASM_FILES := $(TEST_SUCCESS_SPL_FILES:.spl=.s)
 
-TEST_SUCCESS_EXECUTABLES := $(TEST_SUCCESS_SPL_ASM_FILES:.s=)
+TEST_CFFI_EXECUTABLES := $(TEST_CFFI_SPL_FILES:.spl=)
+TEST_SUCCESS_EXECUTABLES := $(TEST_SUCCESS_SPL_FILES:.spl=)
 
 # Declare .s files as secondary to prevent their automatic removal
-.SECONDARY: $(TEST_SUCCESS_SPL_ASM_FILES)
+.SECONDARY: $(TEST_CFFI_SPL_ASM_FILES) $(TEST_SUCCESS_SPL_ASM_FILES)
 
 # Default target
 all: spc test
@@ -23,7 +27,7 @@ spc: spc.c
 		-o $@ $<
 
 
-test: test-assembly test-failure test-success
+test: test-assembly test-cffi test-failure test-success
 	@llvm-profdata merge -o tests.profdata tests/*/*.profraw
 	llvm-cov show ./spc -instr-profile=tests.profdata -format=html -output-dir=coverage --show-branches=count
 
@@ -50,6 +54,28 @@ test-assembly:
 	else \
 		echo "Passed."; \
 	fi
+
+
+test-cffi: $(TEST_CFFI_EXECUTABLES)
+	@for test in $(TEST_CFFI_EXECUTABLES); do \
+		echo "Running $$test..."; \
+		./$$test; \
+		if [ $$? -ne 0 ]; then \
+			echo "Test $$test failed"; \
+			exit 1; \
+		fi; \
+	done
+
+tests/cffi/%: tests/cffi/%.s tests/cffi/%.o
+	clang -O0 --debug -o $@ $^
+
+tests/cffi/%.o: tests/cffi/%.c
+	clang -O0 --debug -c -o $@ $<
+
+tests/cffi/%.s: tests/cffi/%.spl spc
+	LLVM_PROFILE_FILE="$$(echo "$<" | sed 's/\.[^.]*$$/.profraw/')" ./spc -o $@ $<
+
+tests/cffi/%.spl:
 
 
 test-failure:

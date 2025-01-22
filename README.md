@@ -106,8 +106,8 @@ reserved_number =
 - [x] up to 8 (single-word) function parameters (passed via registers)
 - [x] more than 8 (single-word) function parameters (passed via the stack)
 - [x] `const let name: type` forward function declarations
-- [ ] `extern fn`
-  - [ ] test calling into c; translate sum from `fn_params9.spl`
+- [x] `extern fn` declarations; test calling into c
+- [ ] allow extra comma at the end of `fn_decl_params`/`fn_def_params`
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte character literals, i.e. `b'a'`

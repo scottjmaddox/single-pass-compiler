@@ -52,6 +52,7 @@ enum TOKEN {
     TOKEN_KEYWORD_LET,
     TOKEN_KEYWORD_ELSE,
     TOKEN_KEYWORD_CONST,
+    TOKEN_KEYWORD_EXTERN,
     TOKEN_IDENT,
     TOKEN_INT_LITERAL,
     TOKEN_RESERVED,
@@ -93,6 +94,7 @@ static char *TOKEN_NAMES[] = {
     "KEYWORD_LET",
     "KEYWORD_ELSE",
     "KEYWORD_CONST",
+    "KEYWORD_EXTERN",
     "IDENT",
     "INT_LITERAL",
     "RESERVED",
@@ -210,6 +212,7 @@ static struct str FN_STR = {.len = sizeof "fn" - 1, .ptr = "fn"};
 static struct str LET_STR = {.len = sizeof "let" - 1, .ptr = "let"};
 static struct str ELSE_STR = {.len = sizeof "else" - 1, .ptr = "else"};
 static struct str CONST_STR = {.len = sizeof "const" - 1, .ptr = "const"};
+static struct str EXTERN_STR = {.len = sizeof "extern" - 1, .ptr = "extern"};
 
 static struct str WILDCARD_STR = {.len = sizeof "_" - 1, .ptr = "_"};
 
@@ -717,6 +720,9 @@ lex(struct context *ctx) {
                 break;
             case 5:
                 if (str_equals(token_str(ctx, tok), CONST_STR)) { tok.kind = TOKEN_KEYWORD_CONST; return tok; }
+                break;
+            case 6:
+                if (str_equals(token_str(ctx, tok), EXTERN_STR)) { tok.kind = TOKEN_KEYWORD_EXTERN; return tok; }
                 break;
             }
             tok.kind = TOKEN_IDENT;
@@ -1579,8 +1585,14 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
 static void
 compile_fn_decl(struct context *ctx, struct token *name_tok) {
     // EBNF: fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
+    bool is_extern = false;
+    if (peek_token_kind(ctx) == TOKEN_KEYWORD_EXTERN) {
+        take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_EXTERN);
+        is_extern = true;
+    }
     struct fn_header fn_head = parse_fn_header(ctx, name_tok, false);
     fn_head.fn_sym.is_forward_decl = true;
+    fn_head.fn_sym.is_satisfied = is_extern;
     struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
     if (existing_sym_node != NULL) {
         if (!type_equals(existing_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
