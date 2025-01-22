@@ -253,7 +253,7 @@ struct type {
     union {
         // For TY_FN:
         struct {
-            struct type_node *arg_list; // the parameter types followed by the return type
+            struct type_node *param_type_list; // the parameter types followed by the return type
             int stacked_args_size;
         };
         // For TY_CONST_INT:
@@ -436,9 +436,9 @@ pop_scope(struct context *ctx) {
         scope->symbol_list = node->next;
         struct type ty = node->sym.tysp.type;
         if (ty.kind == TY_FN) {
-            while (ty.arg_list != NULL) {
-                struct type_node *arg = ty.arg_list;
-                ty.arg_list = arg->next;
+            while (ty.param_type_list != NULL) {
+                struct type_node *arg = ty.param_type_list;
+                ty.param_type_list = arg->next;
                 free_type_node(ctx, arg);
             }
         }
@@ -475,14 +475,14 @@ type_equals(struct type a, struct type b) {
         return true;
     case TY_FN:
         {
-            struct type_node *a_arg = a.arg_list;
-            struct type_node *b_arg = b.arg_list;
-            while (a_arg != NULL && b_arg != NULL) {
-                if (!type_equals(a_arg->tysp.type, b_arg->tysp.type)) { return false; }
-                a_arg = a_arg->next;
-                b_arg = b_arg->next;
+            struct type_node *a_param_type_node = a.param_type_list;
+            struct type_node *b_param_type_node = b.param_type_list;
+            while (a_param_type_node != NULL && b_param_type_node != NULL) {
+                if (!type_equals(a_param_type_node->tysp.type, b_param_type_node->tysp.type)) { return false; }
+                a_param_type_node = a_param_type_node->next;
+                b_param_type_node = b_param_type_node->next;
             }
-            return a_arg == NULL && b_arg == NULL;
+            return a_param_type_node == NULL && b_param_type_node == NULL;
         }
     case TY_CONST_INT:
         return a.value == b.value;
@@ -1503,8 +1503,8 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
     struct symbol_node *param_sym_list_start = NULL;
     struct symbol_node *param_sym_list_end = NULL;
-    struct type_node *fn_type_arg_list_start = NULL;
-    struct type_node *fn_type_arg_list_end = NULL;
+    struct type_node *param_type_list_start = NULL;
+    struct type_node *param_type_list_end = NULL;
     int raw_args_size = 0;
     while (peek_token_kind(ctx) != TOKEN_RIGHT_PAREN) {
         struct token param_name_tok;
@@ -1516,13 +1516,13 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
         if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
         struct type_node *param_type_node = alloc_type_node(ctx);
         *param_type_node = (struct type_node){ .next = NULL, .tysp = param_tysp };
-        if (fn_type_arg_list_start == NULL) {
-            assert(fn_type_arg_list_end == NULL);
-            fn_type_arg_list_start = param_type_node;
+        if (param_type_list_start == NULL) {
+            assert(param_type_list_end == NULL);
+            param_type_list_start = param_type_node;
         } else {
-            fn_type_arg_list_end->next = param_type_node;
+            param_type_list_end->next = param_type_node;
         }
-        fn_type_arg_list_end = param_type_node;
+        param_type_list_end = param_type_node;
         if (is_def) {
             struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
             *param_sym_node = (struct symbol_node){ .next = NULL,
@@ -1558,14 +1558,14 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
     }
     struct type_node *return_type_node = alloc_type_node(ctx);
     *return_type_node = (struct type_node){ .next = NULL, .tysp = declared_return_tysp };
-    if (fn_type_arg_list_end == NULL) {
-        fn_type_arg_list_start = return_type_node;
-        fn_type_arg_list_end = return_type_node;
+    if (param_type_list_end == NULL) {
+        param_type_list_start = return_type_node;
+        param_type_list_end = return_type_node;
     } else {
-        assert(fn_type_arg_list_start != NULL);
-        fn_type_arg_list_end->next = return_type_node;
+        assert(param_type_list_start != NULL);
+        param_type_list_end->next = return_type_node;
     }
-    fn_tysp.type.arg_list = fn_type_arg_list_start;
+    fn_tysp.type.param_type_list = param_type_list_start;
     struct symbol fn_sym = { .ident_tok = *name_tok, .tysp = fn_tysp };
     return (struct fn_header){
         .fn_sym = fn_sym,
@@ -1585,12 +1585,12 @@ compile_fn_decl(struct context *ctx, struct token *name_tok) {
     struct fn_header fn_head = parse_fn_header(ctx, name_tok, false);
     fn_head.fn_sym.is_forward_decl = true;
     fn_head.fn_sym.is_satisfied = is_extern;
-    struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
-    if (existing_sym_node != NULL) {
-        if (!type_equals(existing_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
-            fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_sym_node->sym);
+    struct symbol_node *existing_fn_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
+    if (existing_fn_sym_node != NULL) {
+        if (!type_equals(existing_fn_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
+            fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_fn_sym_node->sym);
         }
-        existing_sym_node->sym.is_satisfied = true;
+        existing_fn_sym_node->sym.is_satisfied = true;
     }
     push_symbol(ctx, fn_head.fn_sym);
 }
@@ -1599,23 +1599,23 @@ static void
 compile_fn_def(struct context *ctx, struct token *name_tok) {
     // EBNF: fn_def = "fn" "(" fn_def_params ")" "->" type_expr block ;
     struct fn_header fn_head = parse_fn_header(ctx, name_tok, true);
-    struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
-    if (existing_sym_node != NULL) {
-        if (!existing_sym_node->sym.is_forward_decl) {
-            fail_redefinition(ctx,fn_head.fn_sym, existing_sym_node->sym);
+    struct symbol_node *existing_fn_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
+    if (existing_fn_sym_node != NULL) {
+        if (!existing_fn_sym_node->sym.is_forward_decl) {
+            fail_redefinition(ctx,fn_head.fn_sym, existing_fn_sym_node->sym);
         }
-        if (!type_equals(existing_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
-            fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_sym_node->sym);
+        if (!type_equals(existing_fn_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
+            fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_fn_sym_node->sym);
         }
-        existing_sym_node->sym.is_satisfied = true;
+        existing_fn_sym_node->sym.is_satisfied = true;
     }
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     int regidx = 0;
     int stacked_arg_frame_offset = 16; // NOTE: the first 16 bytes hold the frame pointer and return address
-    struct symbol_node *sym_node = fn_head.param_sym_list_start;
-    struct type_node *type_node = fn_head.fn_sym.tysp.type.arg_list; //fn_type_arg_list_start;
-    for (; type_node->next != NULL; sym_node = sym_node->next, type_node = type_node->next) {
-            switch (type_node->tysp.type.kind) {
+    struct symbol_node *param_sym_node = fn_head.param_sym_list_start;
+    struct type_node *param_type_node = fn_head.fn_sym.tysp.type.param_type_list;
+    for (; param_type_node->next != NULL; param_sym_node = param_sym_node->next, param_type_node = param_type_node->next) {
+            switch (param_type_node->tysp.type.kind) {
             case TY_UNIT:
             case TY_NEVER: break;
             case TY_FN: assert(!"not implemented");
@@ -1625,15 +1625,15 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
                     emit_push(ctx, regidx);
                     regidx += 1;
                     ctx->cum_var_frame_offset -= 16;
-                    sym_node->sym.var_frame_offset = ctx->cum_var_frame_offset;
+                    param_sym_node->sym.var_frame_offset = ctx->cum_var_frame_offset;
                 } else { // NOTE: the rest are passed on the stack
-                    sym_node->sym.var_frame_offset = stacked_arg_frame_offset;
+                    param_sym_node->sym.var_frame_offset = stacked_arg_frame_offset;
                     stacked_arg_frame_offset += 8;
                 }
                 break;
             }
     }
-    struct type_span declared_return_tysp = type_node->tysp;
+    struct type_span declared_return_tysp = param_type_node->tysp;
     push_symbol(ctx, fn_head.fn_sym);
     ctx->local_label_count = 0;
     push_scope(ctx);
@@ -2246,7 +2246,7 @@ compile_fn_call(struct context *ctx) {
     if (fn_tysp.type.stacked_args_size != 0) { emit_adjust_stack_pointer(ctx, -fn_tysp.type.stacked_args_size); }
     int regidx = 0;
     int stacked_arg_offset = 0;
-    struct type_node *type_node = fn_tysp.type.arg_list;
+    struct type_node *type_node = fn_tysp.type.param_type_list;
     assert(type_node != NULL);
     for (; type_node->next != NULL; type_node = type_node->next) {
         enum TOKEN next_tok_kind = peek_token_kind(ctx);
@@ -2281,7 +2281,7 @@ compile_fn_call(struct context *ctx) {
     }
     assert(type_node != NULL && type_node->next == NULL);
     struct type return_type = type_node->tysp.type;
-    if (fn_tysp.type.arg_list != type_node && peek_token_kind(ctx) == TOKEN_COMMA) {
+    if (fn_tysp.type.param_type_list != type_node && peek_token_kind(ctx) == TOKEN_COMMA) {
         take_token_expect_kind(ctx, NULL, TOKEN_COMMA);
     }
     struct token right_paren_tok;
