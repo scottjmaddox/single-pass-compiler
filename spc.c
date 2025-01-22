@@ -33,6 +33,7 @@ enum TOKEN {
     TOKEN_RIGHT_ARROW,
     TOKEN_SLASH,
     TOKEN_COLON,
+    TOKEN_SEMICOLON,
     TOKEN_LESS_THAN,
     TOKEN_LESS_EQUAL,
     TOKEN_LESS_LESS,
@@ -75,6 +76,7 @@ static char *TOKEN_NAMES[] = {
     "RIGHT_ARROW",
     "SLASH",
     "COLON",
+    "SEMICOLON",
     "LESS_THAN",
     "LESS_EQUAL",
     "LESS_LESS",
@@ -653,6 +655,7 @@ lex(struct context *ctx) {
             tok.kind = TOKEN_SLASH;
             return tok;
         case ':': tok.kind = TOKEN_COLON; return tok;
+        case ';': tok.kind = TOKEN_SEMICOLON; return tok;
         case '<':
             if (tok.loc.idx + 1 < len) {
                 switch (src[tok.loc.idx + 1]) {
@@ -1719,7 +1722,7 @@ compile_var_expr(struct context *ctx) {
 
 static struct type_span
 compile_block(struct context *ctx, bool create_scope) {
-    // EBNF: block = "{" { expr } "}" ;
+    // EBNF: block = "{" { expr [ ";" ] } "}" ;
     if (create_scope) { push_scope(ctx); }
     struct token left_brace_tok;
     take_token_expect_kind(ctx, &left_brace_tok, TOKEN_LEFT_BRACE);
@@ -1728,16 +1731,31 @@ compile_block(struct context *ctx, bool create_scope) {
     bool was_dead_code = ctx->is_dead_code;
     if (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
         result_tysp = compile_expr(ctx, 0);
+        if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
+            struct token semicolon_tok;
+            take_token_expect_kind(ctx, &semicolon_tok, TOKEN_SEMICOLON);
+            emit_drop_type(ctx, result_tysp.type.kind);
+            result_tysp = (struct type_span){ .type = { .kind = TY_UNIT }, .span =  token_span(ctx, semicolon_tok)};
+        }
         while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
             if (result_tysp.type.kind == TY_NEVER) {
                 // TODO: warn about dead code
                 ctx->is_dead_code = true;
                 while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
                     compile_expr(ctx, 0);
+                    if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
+                        take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON);
+                    }
                 }
             } else {
                 emit_drop_type(ctx, result_tysp.type.kind);
                 result_tysp = compile_expr(ctx, 0);
+                if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
+                    struct token semicolon_tok;
+                    take_token_expect_kind(ctx, &semicolon_tok, TOKEN_SEMICOLON);
+                    emit_drop_type(ctx, result_tysp.type.kind);
+                    result_tysp = (struct type_span){ .type = { .kind = TY_UNIT }, .span =  token_span(ctx, semicolon_tok)};
+                }
             }
         }
         take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);

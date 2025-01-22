@@ -1,0 +1,6 @@
+error: unexpected token: SEMICOLON
+ --> tests/failure/block_with_double_semicolon.spl:2:15
+  |
+  |     let a = 1;;
+  |               ^
+  expected an expression.
