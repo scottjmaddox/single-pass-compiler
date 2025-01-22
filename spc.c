@@ -286,6 +286,12 @@ struct symbol_node {
     struct symbol sym;
 };
 
+struct fn_header {
+    struct symbol fn_sym;
+    struct symbol_node *param_sym_list_start;
+    struct symbol_node *param_sym_list_end;
+};
+
 struct scope_node {
     struct scope_node *next;
     struct symbol_node *symbol_list;
@@ -858,7 +864,7 @@ fail_expected(struct context *ctx, char *str) {
     struct token tok = take_token(ctx);
     fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
     eprint_span(ctx, token_span(ctx, tok));
-    fprintf(stderr, "  expected: %s.\n", str);
+    fprintf(stderr, "  expected %s.\n", str);
     exit(EXIT_FAILURE);
 }
 
@@ -1381,6 +1387,7 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
 
 static void compile_program(struct context *ctx);
 static void compile_const_let(struct context *ctx);
+static void compile_fn_decl(struct context *ctx, struct token *name_tok);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static struct type_span compile_let_expr(struct context *ctx);
 static struct type_span compile_var_expr(struct context *ctx);
@@ -1405,7 +1412,10 @@ compile_program(struct context *ctx) {
 
 static void
 compile_const_let(struct context *ctx) {
-    // EBNF: const_let = "const" "let" ident "=" fn_def ;
+    // EBNF:
+    // const_let = const_let_decl | const_let_def ;
+    // const_let_decl = "const" "let" ident ":" fn_decl ;
+    // const_let_def = "const" "let" ident "=" fn_def ;
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_CONST);
     take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_LET);
     struct token name_tok;
@@ -1413,8 +1423,15 @@ compile_const_let(struct context *ctx) {
     if (str_starts_with(token_str(ctx, name_tok), BUILTIN_STR)) {
         fail_reserved_ident(ctx, name_tok);
     }
-    take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
-    compile_fn_def(ctx, &name_tok);
+    if (peek_token_kind(ctx) == TOKEN_COLON) {
+        take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+        compile_fn_decl(ctx, &name_tok);
+    } else if (peek_token_kind(ctx) == TOKEN_EQUAL) {
+        take_token_expect_kind(ctx, NULL, TOKEN_EQUAL);
+        compile_fn_def(ctx, &name_tok);
+    } else {
+        fail_expected(ctx, "`:` or `=`");
+    }
 }
 
 static struct type_span
@@ -1453,12 +1470,15 @@ parse_type(struct context *ctx) {
     return (struct type_span){ 0 };
 }
 
-static void
-compile_fn_def(struct context *ctx, struct token *name_tok) {
+static struct fn_header
+parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
     // EBNF:
-    // fn_def = "fn" "(" [ fn_params ] ")" "->" type_expr block ;
-    // fn_params = fn_param { "," fn_param } ;
-    // fn_param = ident ":" type_expr ;
+    // fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
+    // fn_decl_params = fn_decl_param { "," fn_decl_param } ;
+    // fn_decl_param = [ ident ":" ] type_expr ;
+    // fn_def = "fn" "(" [ fn_def_params ] ")" "->" type_expr block ;
+    // fn_def_params = fn_def_param { "," fn_def_param } ;
+    // fn_def_param = ident ":" type_expr ;
     struct token fn_tok;
     take_token_expect_kind(ctx, &fn_tok, TOKEN_KEYWORD_FN);
     struct type_span fn_tysp = { .type = { .kind = TY_FN } };
@@ -1470,19 +1490,24 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     int raw_args_size = 0;
     if (peek_token_kind(ctx) != TOKEN_RIGHT_PAREN) {
         struct token param_name_tok;
-        take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
-        take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+        if (is_def || (peek_token_kind(ctx) == TOKEN_IDENT && peek_token_kind_at(ctx, 1) == TOKEN_COLON)) {
+            take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
+            take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+        }
         struct type_span param_tysp = parse_type(ctx);
         if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
-        struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
-        *param_sym_node = (struct symbol_node){ .next = NULL,
-            .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
-        param_sym_list_start = param_sym_node;
-        param_sym_list_end = param_sym_node;
         struct type_node *param_type_node = alloc_type_node(ctx);
         *param_type_node = (struct type_node){ .next = NULL, .tysp = param_tysp };
         fn_type_arg_list_start = param_type_node;
         fn_type_arg_list_end = param_type_node;
+        struct symbol_node *param_sym_node;
+        if (is_def) {
+            param_sym_node = alloc_symbol_node(ctx);
+            *param_sym_node = (struct symbol_node){ .next = NULL,
+                .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
+            param_sym_list_start = param_sym_node;
+            param_sym_list_end = param_sym_node;
+        }
         while (peek_token_kind(ctx) == TOKEN_COMMA) {
             take_token_expect_kind(ctx, NULL, TOKEN_COMMA);
             struct token param_name_tok;
@@ -1490,15 +1515,17 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
             take_token_expect_kind(ctx, NULL, TOKEN_COLON);
             struct type_span param_tysp = parse_type(ctx);
             if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
-            struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
-            *param_sym_node = (struct symbol_node){ .next = NULL,
-                .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
-            param_sym_list_end->next = param_sym_node;
-            param_sym_list_end = param_sym_node;
             struct type_node *param_type_node = alloc_type_node(ctx);
             *param_type_node = (struct type_node){ .next = NULL, .tysp = param_tysp };
             fn_type_arg_list_end->next = param_type_node;
             fn_type_arg_list_end = param_type_node;
+            if (is_def) {
+                struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
+                *param_sym_node = (struct symbol_node){ .next = NULL,
+                    .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
+                param_sym_list_end->next = param_sym_node;
+                param_sym_list_end = param_sym_node;
+            }
         }
     }
     if (raw_args_size > 8 * 8) {
@@ -1528,24 +1555,39 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     }
     fn_tysp.type.arg_list = fn_type_arg_list_start;
     struct symbol fn_sym = { .ident_tok = *name_tok, .tysp = fn_tysp };
-    struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_sym.ident_tok));
+    return (struct fn_header){
+        .fn_sym = fn_sym,
+        .param_sym_list_start = param_sym_list_start,
+        .param_sym_list_end = param_sym_list_end
+    };
+}
+
+static void
+compile_fn_decl(struct context *ctx, struct token *name_tok) {
+    // EBNF: fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
+    // struct fn_header fn_head = parse_fn_header(ctx, name_tok, false);
+    assert(!"not implemented"); // TODO: implement
+}
+
+static void
+compile_fn_def(struct context *ctx, struct token *name_tok) {
+    // EBNF: fn_def = "fn" "(" [ fn_def_params ] ")" "->" type_expr block ;
+    struct fn_header fn_head = parse_fn_header(ctx, name_tok, true);
+    struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
     if (existing_sym_node != NULL) {
         if (!existing_sym_node->sym.is_forward_decl) {
-            fail_redefinition(ctx, fn_sym, existing_sym_node->sym);
+            fail_redefinition(ctx,fn_head.fn_sym, existing_sym_node->sym);
         }
-        if (!type_equals(existing_sym_node->sym.tysp.type, fn_tysp.type)) {
-            fail_conflicting_forward_decl_type(ctx, fn_sym, existing_sym_node->sym);
+        if (!type_equals(existing_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
+            fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_sym_node->sym);
         }
     }
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     int regidx = 0;
     int stacked_arg_frame_offset = 16; // NOTE: the first 16 bytes hold the frame pointer and return address
-    struct symbol_node *sym_node = param_sym_list_start;
-    for (
-        struct type_node *type_node = fn_type_arg_list_start;
-        type_node != return_type_node;
-        sym_node = sym_node->next, type_node = type_node->next
-    ) {
+    struct symbol_node *sym_node = fn_head.param_sym_list_start;
+    struct type_node *type_node = fn_head.fn_sym.tysp.type.arg_list; //fn_type_arg_list_start;
+    for (; type_node->next != NULL; sym_node = sym_node->next, type_node = type_node->next) {
             switch (type_node->tysp.type.kind) {
             case TY_UNIT:
             case TY_NEVER: break;
@@ -1564,15 +1606,16 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
                 break;
             }
     }
-    push_symbol(ctx, fn_sym);
+    struct type_span declared_return_tysp = type_node->tysp;
+    push_symbol(ctx, fn_head.fn_sym);
     ctx->local_label_count = 0;
     push_scope(ctx);
-    if (param_sym_list_end != NULL) {
-        assert(param_sym_list_start != NULL);
-        param_sym_list_end->next = ctx->scope_stack->symbol_list;
-        ctx->scope_stack->symbol_list = param_sym_list_start;
+    if (fn_head.param_sym_list_end != NULL) {
+        assert(fn_head.param_sym_list_start != NULL);
+        fn_head.param_sym_list_end->next = ctx->scope_stack->symbol_list;
+        ctx->scope_stack->symbol_list = fn_head.param_sym_list_start;
     } else {
-        assert(param_sym_list_start == NULL);
+        assert(fn_head.param_sym_list_start == NULL);
     }
     struct type_span block_return_tysp = compile_block(ctx, false);
     struct type return_type = require_subtype_coerce(ctx, block_return_tysp, declared_return_tysp);

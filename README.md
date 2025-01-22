@@ -16,10 +16,15 @@ The currently supported grammar, in [extended Backus–Naur form (EBNF)](https:/
 
 ```ebnf
 program = { const_let } ;
-const_let = "const" "let" ident "=" fn_def ;
-fn_def = "fn" "(" [ fn_params ] ")" "->" type_expr block ;
-fn_params = fn_param { "," fn_param } ;
-fn_param = ident ":" type_expr ;
+const_let = const_let_decl | const_let_def ;
+const_let_decl = "const" "let" ident ":" fn_decl ;
+fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
+fn_decl_params = fn_decl_param { "," fn_decl_param } ;
+fn_decl_param = [ ident ":" ] type_expr ;
+const_let_def = "const" "let" ident "=" fn_def ;
+fn_def = "fn" "(" [ fn_def_params ] ")" "->" type_expr block ;
+fn_def_params = fn_def_param { "," fn_def_param } ;
+fn_def_param = ident ":" type_expr ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
 expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
@@ -100,6 +105,10 @@ reserved_number =
 - [x] `let` type annotations
 - [x] up to 8 (single-word) function parameters (passed via registers)
 - [x] more than 8 (single-word) function parameters (passed via the stack)
+- [ ] `const let name: type` forward function declarations
+  - [ ] test `fail_conflicting_forward_decl_type`
+- [ ] `extern fn`
+  - [ ] test calling into c; translate sum from `fn_params9.spl`
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte character literals, i.e. `b'a'`
@@ -113,15 +122,12 @@ reserved_number =
 - [ ] in (`name: <-type`), inout (`name: <->type`) and out (`name: ->type`) parameters, passed as pointers
 - [ ] optional in (`name: ?<-type`), inout (`name: ?<->type`), and out (`name: ?->type`) parameters?
 - [ ] non-nullable pointer types (`*type`) (no dereferencing, yet)
-- [ ] cffi
 - [ ] support calling `ssize_t write(int fd, const void *buf, size_t count)`
   - e.g. `const let write = extern fn(fd: i32, buf: *u8, count: usize) -> isize`
 - [ ] add line numbers to error messages
 - [ ] support multi-line span error messages
 - [ ] `let name: type` forward variable declarations
 - [ ] nullable pointer types (`?*type`), with coersion
-- [ ] `const let name: type` forward function declarations
-  - [ ] test `fail_conflicting_forward_decl_type`
 - [ ] `const let` support for `const int`
 - [ ] `const let` function aliases
 - [ ] local `const let` support
