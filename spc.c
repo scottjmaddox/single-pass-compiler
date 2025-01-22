@@ -433,11 +433,10 @@ pop_scope(struct context *ctx) {
         scope->symbol_list = node->next;
         struct type ty = node->sym.tysp.type;
         if (ty.kind == TY_FN) {
-            struct type_node *arg = ty.arg_list;
-            while (arg != NULL) {
-                struct type_node *next = arg->next;
+            while (ty.arg_list != NULL) {
+                struct type_node *arg = ty.arg_list;
+                ty.arg_list = arg->next;
                 free_type_node(ctx, arg);
-                arg = next;
             }
         }
         free_symbol_node(ctx, node);
