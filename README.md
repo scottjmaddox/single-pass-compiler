@@ -18,12 +18,12 @@ The currently supported grammar, in [extended Backus–Naur form (EBNF)](https:/
 program = { const_let } ;
 const_let = const_let_decl | const_let_def ;
 const_let_decl = "const" "let" ident ":" fn_decl ;
-fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
-fn_decl_params = fn_decl_param { "," fn_decl_param } ;
+fn_decl = "fn" "(" fn_decl_params ")" "->" type_expr ;
+fn_decl_params = { fn_decl_param "," } [ fn_decl_param ] ;
 fn_decl_param = [ ident ":" ] type_expr ;
 const_let_def = "const" "let" ident "=" fn_def ;
-fn_def = "fn" "(" [ fn_def_params ] ")" "->" type_expr block ;
-fn_def_params = fn_def_param { "," fn_def_param } ;
+fn_def = "fn" "(" fn_def_params ")" "->" type_expr block ;
+fn_def_params = { fn_def_param "," } [ fn_def_param ] ;
 fn_def_param = ident ":" type_expr ;
 type_expr = ident ;
 block = "{" { expr } "}" ;
@@ -31,7 +31,7 @@ expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_e
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident [ ":" type_expr ] "=" expr ;
 fn_call = ident "(" fn_args ")" ;
-fn_args = expr { "," expr } ;
+fn_args = { expr "," } [ expr ] ;
 var_expr = ident ;
 op_expr = prefix_op expr | expr infix_op expr ;
 
@@ -107,7 +107,7 @@ reserved_number =
 - [x] more than 8 (single-word) function parameters (passed via the stack)
 - [x] `const let name: type` forward function declarations
 - [x] `extern fn` declarations; test calling into c
-- [ ] allow extra comma at the end of `fn_decl_params`/`fn_def_params`
+- [x] allow extra comma at the end of `fn_decl_params`/`fn_def_params`
 - [ ] array type, array literals
 - [ ] slice type, slice literals
 - [ ] byte character literals, i.e. `b'a'`

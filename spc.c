@@ -1491,11 +1491,11 @@ parse_type(struct context *ctx) {
 static struct fn_header
 parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
     // EBNF:
-    // fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
-    // fn_decl_params = fn_decl_param { "," fn_decl_param } ;
+    // fn_decl = "fn" "(" fn_decl_params ")" "->" type_expr ;
+    // fn_decl_params = { fn_decl_param "," } [ fn_decl_param ] ;
     // fn_decl_param = [ ident ":" ] type_expr ;
-    // fn_def = "fn" "(" [ fn_def_params ] ")" "->" type_expr block ;
-    // fn_def_params = fn_def_param { "," fn_def_param } ;
+    // fn_def = "fn" "(" fn_def_params ")" "->" type_expr block ;
+    // fn_def_params = { fn_def_param "," } [ fn_def_param ] ;
     // fn_def_param = ident ":" type_expr ;
     struct token fn_tok;
     take_token_expect_kind(ctx, &fn_tok, TOKEN_KEYWORD_FN);
@@ -1506,7 +1506,7 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
     struct type_node *fn_type_arg_list_start = NULL;
     struct type_node *fn_type_arg_list_end = NULL;
     int raw_args_size = 0;
-    if (peek_token_kind(ctx) != TOKEN_RIGHT_PAREN) {
+    while (peek_token_kind(ctx) != TOKEN_RIGHT_PAREN) {
         struct token param_name_tok;
         if (is_def || (peek_token_kind(ctx) == TOKEN_IDENT && peek_token_kind_at(ctx, 1) == TOKEN_COLON)) {
             take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
@@ -1516,36 +1516,28 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
         if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
         struct type_node *param_type_node = alloc_type_node(ctx);
         *param_type_node = (struct type_node){ .next = NULL, .tysp = param_tysp };
-        fn_type_arg_list_start = param_type_node;
+        if (fn_type_arg_list_start == NULL) {
+            assert(fn_type_arg_list_end == NULL);
+            fn_type_arg_list_start = param_type_node;
+        } else {
+            fn_type_arg_list_end->next = param_type_node;
+        }
         fn_type_arg_list_end = param_type_node;
-        struct symbol_node *param_sym_node;
         if (is_def) {
-            param_sym_node = alloc_symbol_node(ctx);
+            struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
             *param_sym_node = (struct symbol_node){ .next = NULL,
                 .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
-            param_sym_list_start = param_sym_node;
+            if (param_sym_list_start == NULL) {
+                param_sym_list_start = param_sym_node;
+            } else {
+            param_sym_list_end->next = param_sym_node;
+            }
             param_sym_list_end = param_sym_node;
         }
-        while (peek_token_kind(ctx) == TOKEN_COMMA) {
+        if (peek_token_kind(ctx) == TOKEN_COMMA) {
             take_token_expect_kind(ctx, NULL, TOKEN_COMMA);
-            struct token param_name_tok;
-            if (is_def || (peek_token_kind(ctx) == TOKEN_IDENT && peek_token_kind_at(ctx, 1) == TOKEN_COLON)) {
-                take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
-                take_token_expect_kind(ctx, NULL, TOKEN_COLON);
-            }
-            struct type_span param_tysp = parse_type(ctx);
-            if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
-            struct type_node *param_type_node = alloc_type_node(ctx);
-            *param_type_node = (struct type_node){ .next = NULL, .tysp = param_tysp };
-            fn_type_arg_list_end->next = param_type_node;
-            fn_type_arg_list_end = param_type_node;
-            if (is_def) {
-                struct symbol_node *param_sym_node = alloc_symbol_node(ctx);
-                *param_sym_node = (struct symbol_node){ .next = NULL,
-                    .sym = { .ident_tok = param_name_tok, .tysp = param_tysp } };
-                param_sym_list_end->next = param_sym_node;
-                param_sym_list_end = param_sym_node;
-            }
+        } else if (peek_token_kind(ctx) != TOKEN_RIGHT_PAREN) {
+            fail_expected(ctx, "`,` or `)`");
         }
     }
     if (raw_args_size > 8 * 8) {
@@ -1584,7 +1576,7 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
 
 static void
 compile_fn_decl(struct context *ctx, struct token *name_tok) {
-    // EBNF: fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
+    // EBNF: fn_decl = "fn" "(" fn_decl_params ")" "->" type_expr ;
     bool is_extern = false;
     if (peek_token_kind(ctx) == TOKEN_KEYWORD_EXTERN) {
         take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_EXTERN);
@@ -1605,7 +1597,7 @@ compile_fn_decl(struct context *ctx, struct token *name_tok) {
 
 static void
 compile_fn_def(struct context *ctx, struct token *name_tok) {
-    // EBNF: fn_def = "fn" "(" [ fn_def_params ] ")" "->" type_expr block ;
+    // EBNF: fn_def = "fn" "(" fn_def_params ")" "->" type_expr block ;
     struct fn_header fn_head = parse_fn_header(ctx, name_tok, true);
     struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
     if (existing_sym_node != NULL) {
@@ -2231,7 +2223,7 @@ static struct type_span
 compile_fn_call(struct context *ctx) {
     // EBNF:
     // fn_call = ident "(" fn_args ")" ;
-    // fn_args = expr { "," expr } ;
+    // fn_args = { expr "," } [ expr ] ;
     struct token name_tok;
     take_token_expect_kind(ctx, &name_tok, TOKEN_IDENT);
     take_token_expect_kind(ctx, NULL, TOKEN_LEFT_PAREN);
@@ -2289,6 +2281,9 @@ compile_fn_call(struct context *ctx) {
     }
     assert(type_node != NULL && type_node->next == NULL);
     struct type return_type = type_node->tysp.type;
+    if (fn_tysp.type.arg_list != type_node && peek_token_kind(ctx) == TOKEN_COMMA) {
+        take_token_expect_kind(ctx, NULL, TOKEN_COMMA);
+    }
     struct token right_paren_tok;
     take_token_expect_kind(ctx, &right_paren_tok, TOKEN_RIGHT_PAREN);
     struct span fn_call_span = { .start = name_tok.loc, .end = token_end(ctx, right_paren_tok) };
