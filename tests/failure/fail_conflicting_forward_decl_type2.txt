@@ -1,0 +1,10 @@
+error: conflicting forward declaration of `add`:
+ --> tests/failure/fail_conflicting_forward_decl_type2.spl:2:11
+  |
+  | const let add: fn(a: i64, b: i64) -> i64
+  |           ^^^
+  previously declared here:
+ --> tests/failure/fail_conflicting_forward_decl_type2.spl:1:11
+  |
+  | const let add: fn(i32, i32) -> i32
+  |           ^^^

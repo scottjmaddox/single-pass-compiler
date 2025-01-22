@@ -105,8 +105,7 @@ reserved_number =
 - [x] `let` type annotations
 - [x] up to 8 (single-word) function parameters (passed via registers)
 - [x] more than 8 (single-word) function parameters (passed via the stack)
-- [ ] `const let name: type` forward function declarations
-  - [ ] test `fail_conflicting_forward_decl_type`
+- [x] `const let name: type` forward function declarations
 - [ ] `extern fn`
   - [ ] test calling into c; translate sum from `fn_params9.spl`
 - [ ] array type, array literals

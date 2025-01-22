@@ -1,0 +1,6 @@
+error: unexpected token: COMMA
+ --> tests/failure/fn_call_unexpected_arg.spl:2:37
+  |
+  | const let main = fn() -> i32 { foo(0, 1) }
+  |                                     ^
+  expected: RIGHT_PAREN

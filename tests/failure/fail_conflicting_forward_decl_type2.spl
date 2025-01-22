@@ -1,0 +1,4 @@
+const let add: fn(i32, i32) -> i32
+const let add: fn(a: i64, b: i64) -> i64
+const let add = fn(a: i64, b: i64) -> i64 { a + b }
+const let main = fn() -> i64 { add(1, -1) }

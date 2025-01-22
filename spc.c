@@ -278,6 +278,7 @@ struct symbol {
     struct token ident_tok;
     struct type_span tysp;
     bool is_forward_decl;
+    bool is_satisfied; // true if the forward declaration has been satisfied
     int var_frame_offset; // variable offset from the frame pointer (x29)
 };
 
@@ -890,8 +891,15 @@ fail_conflicting_forward_decl_type(struct context *ctx, struct symbol new, struc
     // TODO: show diff of types
     fprintf(stderr, "error: conflicting forward declaration of `%.*s`:\n", (int)new.ident_tok.len, ctx->src + new.ident_tok.loc.idx);
     eprint_span(ctx, token_span(ctx, new.ident_tok));
-    fprintf(stderr, "  previously defined here:\n");
+    fprintf(stderr, "  previously declared here:\n");
     eprint_span(ctx, token_span(ctx, old.ident_tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_fn_decl_with_def(struct context *ctx, struct symbol fn_decl) {
+    fprintf(stderr, "error: function declaration with definition:\n");
+    eprint_span(ctx, token_span(ctx, fn_decl.ident_tok));
     exit(EXIT_FAILURE);
 }
 
@@ -1406,6 +1414,11 @@ compile_program(struct context *ctx) {
     while (peek_token_kind(ctx) != TOKEN_EOF) {
         compile_const_let(ctx);
     }
+    for(struct symbol_node *sym_node = ctx->scope_stack->symbol_list; sym_node != NULL; sym_node = sym_node->next) {
+        if (sym_node->sym.is_forward_decl && !sym_node->sym.is_satisfied) {
+            fail_fn_decl_with_def(ctx, sym_node->sym);
+        }
+    }
     // NOTE: no need to pop_scope, since this is the top level
     emit_program_epilogue(ctx);
 }
@@ -1511,8 +1524,10 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
         while (peek_token_kind(ctx) == TOKEN_COMMA) {
             take_token_expect_kind(ctx, NULL, TOKEN_COMMA);
             struct token param_name_tok;
-            take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
-            take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+            if (is_def || (peek_token_kind(ctx) == TOKEN_IDENT && peek_token_kind_at(ctx, 1) == TOKEN_COLON)) {
+                take_token_expect_kind(ctx, &param_name_tok, TOKEN_IDENT);
+                take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+            }
             struct type_span param_tysp = parse_type(ctx);
             if (param_tysp.type.kind == TY_INT) { raw_args_size += 8; }
             struct type_node *param_type_node = alloc_type_node(ctx);
@@ -1565,8 +1580,16 @@ parse_fn_header(struct context *ctx, struct token *name_tok, bool is_def) {
 static void
 compile_fn_decl(struct context *ctx, struct token *name_tok) {
     // EBNF: fn_decl = "fn" "(" [ fn_decl_params ] ")" "->" type_expr ;
-    // struct fn_header fn_head = parse_fn_header(ctx, name_tok, false);
-    assert(!"not implemented"); // TODO: implement
+    struct fn_header fn_head = parse_fn_header(ctx, name_tok, false);
+    fn_head.fn_sym.is_forward_decl = true;
+    struct symbol_node *existing_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
+    if (existing_sym_node != NULL) {
+        if (!type_equals(existing_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
+            fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_sym_node->sym);
+        }
+        existing_sym_node->sym.is_satisfied = true;
+    }
+    push_symbol(ctx, fn_head.fn_sym);
 }
 
 static void
@@ -1581,6 +1604,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
         if (!type_equals(existing_sym_node->sym.tysp.type, fn_head.fn_sym.tysp.type)) {
             fail_conflicting_forward_decl_type(ctx, fn_head.fn_sym, existing_sym_node->sym);
         }
+        existing_sym_node->sym.is_satisfied = true;
     }
     emit_fn_prologue(ctx, token_str(ctx, *name_tok));
     int regidx = 0;
