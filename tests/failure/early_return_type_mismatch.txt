@@ -1,0 +1,13 @@
+error: expected type `const int` from:
+ --> tests/failure/early_return_type_mismatch.spl:2:19
+  |
+  |     if 1 { return 0 }
+  |                   ^
+  to be a subtype of type `unit` from:
+ --> tests/failure/early_return_type_mismatch.spl:1:21
+  |
+  | const let main = fn() {
+  |                     ^
+  note: type A is a subtype of type B if and only if:
+  - every value that A can represent is representable by B, and
+  - type A supports all the operations that type B supports

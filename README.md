@@ -27,9 +27,10 @@ fn_def_params = { fn_def_param "," } [ fn_def_param ] ;
 fn_def_param = ident ":" type_expr ;
 type_expr = ident ;
 block = "{" { expr [ ";" ] } "}" ;
-expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
+expr = block | if_expr | let_expr  | return_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident [ ":" type_expr ] "=" expr ;
+return_expr = "return" expr ;
 fn_call = ident "(" fn_args ")" ;
 fn_args = { expr "," } [ expr ] ;
 var_expr = ident ;
@@ -109,7 +110,9 @@ reserved_number =
 - [x] `extern fn` declarations; test calling into c
 - [x] allow extra comma at the end of `fn_decl_params`/`fn_def_params`
 - [x] allow semicolons between expressions in blocks; if at the end of a block, result is `unit`
-- [ ] early `return` with value
+- [x] early `return` with value
+- [ ] test self recursion
+- [ ] test mutual recursion
 - [ ] `loop`, `continue`, and `break` with optional label and value
 - [ ] array type, array literals, array copy assignment, array indexing, array index assignment
 - [ ] slice type, slice literals, slice copy assignment, array slicing, array slice assignment

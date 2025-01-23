@@ -54,6 +54,7 @@ enum TOKEN {
     TOKEN_KEYWORD_ELSE,
     TOKEN_KEYWORD_CONST,
     TOKEN_KEYWORD_EXTERN,
+    TOKEN_KEYWORD_RETURN,
     TOKEN_IDENT,
     TOKEN_INT_LITERAL,
     TOKEN_RESERVED,
@@ -97,6 +98,7 @@ static char *TOKEN_DISLPAY[] = {
     [TOKEN_KEYWORD_ELSE]        = "`else`",
     [TOKEN_KEYWORD_CONST]       = "`const`",
     [TOKEN_KEYWORD_EXTERN]      = "`extern`",
+    [TOKEN_KEYWORD_RETURN]      = "`return`",
     [TOKEN_IDENT]               = "identifier",
     [TOKEN_INT_LITERAL]         = "integer literal",
     [TOKEN_RESERVED]            = "reserved token",
@@ -215,6 +217,7 @@ static struct str LET_STR = {.len = sizeof "let" - 1, .ptr = "let"};
 static struct str ELSE_STR = {.len = sizeof "else" - 1, .ptr = "else"};
 static struct str CONST_STR = {.len = sizeof "const" - 1, .ptr = "const"};
 static struct str EXTERN_STR = {.len = sizeof "extern" - 1, .ptr = "extern"};
+static struct str RETURN_STR = {.len = sizeof "return" - 1, .ptr = "return"};
 
 static struct str WILDCARD_STR = {.len = sizeof "_" - 1, .ptr = "_"};
 
@@ -323,6 +326,7 @@ struct context {
     struct symbol_node *free_symbol_nodes;
     struct scope_node *free_scope_nodes;
     // Compiler state
+    struct type_span declared_return_tysp;
     int cum_var_frame_offset; // cumulative variable offset from the frame pointer (x29)
     size_t local_label_count;
     struct scope_node *scope_stack;
@@ -733,6 +737,7 @@ lex(struct context *ctx) {
                 break;
             case 6:
                 if (str_equals(token_str(ctx, tok), EXTERN_STR)) { tok.kind = TOKEN_KEYWORD_EXTERN; return tok; }
+                if (str_equals(token_str(ctx, tok), RETURN_STR)) { tok.kind = TOKEN_KEYWORD_RETURN; return tok; }
                 break;
             }
             tok.kind = TOKEN_IDENT;
@@ -1161,7 +1166,7 @@ emit_adjust_stack_pointer(struct context *ctx, int amount) {
 }
 
 static void
-emit_fn_epilogue(struct context *ctx, enum TY return_type) {
+emit_pop_return_value(struct context *ctx, enum TY return_type) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "pop return value");
     switch (return_type) {
@@ -1169,6 +1174,12 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
     case TY_FN: case TY_CONST_INT: assert(!"unreachable"); break;
     case TY_INT: emit_pop(ctx, 0); break;
     }
+}
+
+static void
+emit_fn_epilogue(struct context *ctx, enum TY return_type) {
+    if (ctx->is_dead_code) { return; }
+    emit_pop_return_value(ctx, return_type);
     emit_comment(ctx, "fn epilogue");
     if (ctx->cum_var_frame_offset != 0) {
         emit_adjust_stack_pointer(ctx, -ctx->cum_var_frame_offset);
@@ -1177,6 +1188,19 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
         "\tldp\tx29, x30, [sp], #16\n"
         "\tret\n"
         "\t.cfi_endproc\n");
+}
+
+static void
+emit_fn_early_return(struct context *ctx, enum TY return_type) {
+    if (ctx->is_dead_code) { return; }
+    emit_pop_return_value(ctx, return_type);
+    emit_comment(ctx, "early return");
+    if (ctx->cum_var_frame_offset != 0) {
+        emit_adjust_stack_pointer(ctx, -ctx->cum_var_frame_offset);
+    }
+    fprintf(ctx->output_file,
+        "\tldp\tx29, x30, [sp], #16\n"
+        "\tret\n");
 }
 
 static void
@@ -1390,6 +1414,7 @@ static void compile_const_let(struct context *ctx);
 static void compile_fn_decl(struct context *ctx, struct token *name_tok);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static struct type_span compile_let_expr(struct context *ctx);
+static struct type_span compile_return_expr(struct context *ctx);
 static struct type_span compile_var_expr(struct context *ctx);
 static struct type_span compile_block(struct context *ctx, bool create_scope);
 static struct type_span compile_expr(struct context *ctx, int min_binding_power);
@@ -1617,7 +1642,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
                 break;
             }
     }
-    struct type_span declared_return_tysp = param_type_node->tysp;
+    ctx->declared_return_tysp = param_type_node->tysp;
     push_symbol(ctx, fn_head.fn_sym);
     ctx->local_label_count = 0;
     push_scope(ctx);
@@ -1628,7 +1653,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
         assert(fn_head.param_sym_list_start == NULL);
     }
     struct type_span block_return_tysp = compile_block(ctx, false);
-    struct type return_type = require_subtype_coerce(ctx, block_return_tysp, declared_return_tysp);
+    struct type return_type = require_subtype_coerce(ctx, block_return_tysp, ctx->declared_return_tysp);
     emit_fn_epilogue(ctx, return_type.kind);
     pop_scope(ctx);
 }
@@ -1680,6 +1705,17 @@ compile_let_expr(struct context *ctx) {
 }
 
 static struct type_span
+compile_return_expr(struct context *ctx) {
+    // EBNF: return_expr = "return" expr ;
+    struct token return_tok;
+    take_token_expect_kind(ctx, &return_tok, TOKEN_KEYWORD_RETURN);
+    struct type_span return_tysp = compile_expr(ctx, 0);
+    struct type return_type = require_subtype_coerce(ctx, return_tysp, ctx->declared_return_tysp);
+    emit_fn_early_return(ctx, return_type.kind);
+    return (struct type_span){ .type = { .kind = TY_NEVER }, .span = token_span(ctx, return_tok) };
+}
+
+static struct type_span
 compile_var_expr(struct context *ctx) {
     // EBNF: var_expr = ident ;
     struct token name_tok;
@@ -1721,14 +1757,18 @@ compile_block(struct context *ctx, bool create_scope) {
                         take_token_expect_kind(ctx, NULL, TOKEN_SEMICOLON);
                     }
                 }
+                break;
             } else {
                 emit_drop_type(ctx, result_tysp.type.kind);
                 result_tysp = compile_expr(ctx, 0);
                 if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
                     struct token semicolon_tok;
                     take_token_expect_kind(ctx, &semicolon_tok, TOKEN_SEMICOLON);
-                    emit_drop_type(ctx, result_tysp.type.kind);
-                    result_tysp = (struct type_span){ .type = { .kind = TY_UNIT }, .span =  token_span(ctx, semicolon_tok)};
+                    if (result_tysp.type.kind != TY_NEVER) {
+                        emit_drop_type(ctx, result_tysp.type.kind);
+                        result_tysp = (struct type_span){
+                            .type = { .kind = TY_UNIT }, .span =  token_span(ctx, semicolon_tok)};
+                    }
                 }
             }
         }
@@ -1823,6 +1863,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
     case TOKEN_LEFT_BRACE: left_tysp = compile_block(ctx, true); break;
     case TOKEN_KEYWORD_IF: left_tysp = compile_if_expr(ctx); break;
     case TOKEN_KEYWORD_LET: left_tysp = compile_let_expr(ctx); break;
+    case TOKEN_KEYWORD_RETURN: left_tysp = compile_return_expr(ctx); break;
     case TOKEN_LEFT_PAREN: {
         struct token left_paren_tok, right_paren_tok;
         take_token_expect_kind(ctx, &left_paren_tok, TOKEN_LEFT_PAREN);
