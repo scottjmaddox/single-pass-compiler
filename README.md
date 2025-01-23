@@ -111,8 +111,7 @@ reserved_number =
 - [x] allow extra comma at the end of `fn_decl_params`/`fn_def_params`
 - [x] allow semicolons between expressions in blocks; if at the end of a block, result is `unit`
 - [x] early `return` with value
-- [ ] test self recursion
-- [ ] test mutual recursion
+- [x] test self recursion and mutual recursion
 - [ ] `loop`, `continue`, and `break` with optional label and value
 - [ ] array type, array literals, array copy assignment, array indexing, array index assignment
 - [ ] slice type, slice literals, slice copy assignment, array slicing, array slice assignment

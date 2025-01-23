@@ -1,0 +1,9 @@
+const let recursive = fn(v: i64) -> i64 {
+    if v == 0 {
+        0:i64
+    } else {
+        recursive(v - 1)
+    }
+}
+
+const let main = fn() -> i64 { recursive(5) }

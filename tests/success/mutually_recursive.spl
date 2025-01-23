@@ -1,0 +1,19 @@
+const let is_odd: fn(v: i64) -> u1
+
+const let is_even = fn(v: i64) -> u1 {
+    if v == 0 {
+        1:u1
+    } else {
+        is_odd(v - 1)
+    }
+}
+
+const let is_odd = fn(v: i64) -> u1 {
+    if v == 0 {
+        0:u1
+    } else {
+        is_even(v - 1)
+    }
+}
+
+const let main = fn() -> u1 { is_even(5) }
