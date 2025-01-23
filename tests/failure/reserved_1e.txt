@@ -1,4 +1,4 @@
-error: unexpected token: RESERVED
+error: unexpected reserved token:
  --> tests/failure/reserved_1e.spl:1:32
   |
   | const let main = fn() -> i32 { 1e }

@@ -60,47 +60,47 @@ enum TOKEN {
     TOKEN_UNKNOWN,
 };
 
-static char *TOKEN_NAMES[] = {
-    "EOF",
-    "EXCLAMATION",
-    "EXCLAMATION_EQUAL",
-    "PERCENT",
-    "AMPERSAND",
-    "AMPERSAND_AMPERSAND",
-    "LEFT_PAREN",
-    "RIGHT_PAREN",
-    "ASTERISK",
-    "PLUS",
-    "COMMA",
-    "MINUS",
-    "RIGHT_ARROW",
-    "SLASH",
-    "COLON",
-    "SEMICOLON",
-    "LESS_THAN",
-    "LESS_EQUAL",
-    "LESS_LESS",
-    "EQUAL",
-    "EQUAL_EQUAL",
-    "GREATER_THAN",
-    "GREATER_EQUAL",
-    "GREATER_GREATER",
-    "CARET",
-    "LEFT_BRACE",
-    "BAR",
-    "BAR_BAR",
-    "RIGHT_BRACE",
-    "TILDE",
-    "KEYWORD_IF",
-    "KEYWORD_FN",
-    "KEYWORD_LET",
-    "KEYWORD_ELSE",
-    "KEYWORD_CONST",
-    "KEYWORD_EXTERN",
-    "IDENT",
-    "INT_LITERAL",
-    "RESERVED",
-    "UNKNOWN",
+static char *TOKEN_DISLPAY[] = {
+    [TOKEN_EOF]                 = "end of file",
+    [TOKEN_EXCLAMATION]         = "`!`",
+    [TOKEN_EXCLAMATION_EQUAL]   = "`!=`",
+    [TOKEN_PERCENT]             = "`%`",
+    [TOKEN_AMPERSAND]           = "`&`",
+    [TOKEN_AMPERSAND_AMPERSAND] = "`&&`",
+    [TOKEN_LEFT_PAREN]          = "`(`",
+    [TOKEN_RIGHT_PAREN]         = "`)`",
+    [TOKEN_ASTERISK]            = "`*`",
+    [TOKEN_PLUS]                = "`+`",
+    [TOKEN_COMMA]               = "`,`",
+    [TOKEN_MINUS]               = "`-`",
+    [TOKEN_RIGHT_ARROW]         = "`->`",
+    [TOKEN_SLASH]               = "`/`",
+    [TOKEN_COLON]               = "`:`",
+    [TOKEN_SEMICOLON]           = "`;`",
+    [TOKEN_LESS_THAN]           = "`<`",
+    [TOKEN_LESS_EQUAL]          = "`<=`",
+    [TOKEN_LESS_LESS]           = "`<<`",
+    [TOKEN_EQUAL]               = "`=`",
+    [TOKEN_EQUAL_EQUAL]         = "`==`",
+    [TOKEN_GREATER_THAN]        = "`>`",
+    [TOKEN_GREATER_EQUAL]       = "`>=`",
+    [TOKEN_GREATER_GREATER]     = "`>>`",
+    [TOKEN_CARET]               = "`^`",
+    [TOKEN_LEFT_BRACE]          = "`{`",
+    [TOKEN_BAR]                 = "`|`",
+    [TOKEN_BAR_BAR]             = "`||`",
+    [TOKEN_RIGHT_BRACE]         = "`}`",
+    [TOKEN_TILDE]               = "`~`",
+    [TOKEN_KEYWORD_IF]          = "`if`",
+    [TOKEN_KEYWORD_FN]          = "`fn`",
+    [TOKEN_KEYWORD_LET]         = "`let`",
+    [TOKEN_KEYWORD_ELSE]        = "`else`",
+    [TOKEN_KEYWORD_CONST]       = "`const`",
+    [TOKEN_KEYWORD_EXTERN]      = "`extern`",
+    [TOKEN_IDENT]               = "identifier",
+    [TOKEN_INT_LITERAL]         = "integer literal",
+    [TOKEN_RESERVED]            = "reserved token",
+    [TOKEN_UNKNOWN]             = "unknown token",
 };
 
 enum UNARY_OP {
@@ -420,6 +420,13 @@ push_symbol(struct context *ctx, struct symbol sym) {
     struct symbol_node *node = alloc_symbol_node(ctx);
     *node = (struct symbol_node){ .next = ctx->scope_stack->symbol_list, .sym = sym };
     ctx->scope_stack->symbol_list = node;
+}
+
+static void
+push_symbol_list(struct context *ctx, struct symbol_node *start, struct symbol_node *end) {
+    assert(start != NULL && end != NULL);
+    end->next = ctx->scope_stack->symbol_list;
+    ctx->scope_stack->symbol_list = start;
 }
 
 static void
@@ -838,7 +845,7 @@ get_span_line(struct context *ctx, struct span span) {
 
 static void
 eprint_span(struct context *ctx, struct span span) {
-    // TODO: handle multi-line spans
+    // TODO: handle multi-line spans and show line numbers
     struct str token_line = get_span_line(ctx, span);
     fprintf(stderr,
         " --> %s:%zu:%zu\n"
@@ -862,16 +869,16 @@ eprint_span(struct context *ctx, struct span span) {
 
 static void
 fail_expected_token_kind(struct context *ctx, enum TOKEN expected_token_kind, struct token tok) {
-    fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
+    fprintf(stderr, "error: unexpected %s:\n", TOKEN_DISLPAY[tok.kind]);
     eprint_span(ctx, token_span(ctx, tok));
-    fprintf(stderr, "  expected: %s\n", TOKEN_NAMES[expected_token_kind]);
+    fprintf(stderr, "  expected %s.\n", TOKEN_DISLPAY[expected_token_kind]);
     exit(EXIT_FAILURE);
 }
 
 static void
 fail_expected(struct context *ctx, char *str) {
     struct token tok = take_token(ctx);
-    fprintf(stderr, "error: unexpected token: %s\n", TOKEN_NAMES[tok.kind]);
+    fprintf(stderr, "error: unexpected %s:\n", TOKEN_DISLPAY[tok.kind]);
     eprint_span(ctx, token_span(ctx, tok));
     fprintf(stderr, "  expected %s.\n", str);
     exit(EXIT_FAILURE);
@@ -952,7 +959,7 @@ fail_fn_call_non_fn(struct context *ctx, struct token fn_call_tok, struct token 
 
 static void
 fail_expected_fn_argument(struct context *ctx, struct token tok, struct type_span expected) {
-    fprintf(stderr, "error: unexpected token %s at:\n", TOKEN_NAMES[tok.kind]);
+    fprintf(stderr, "error: unexpected %s:\n", TOKEN_DISLPAY[tok.kind]);
     eprint_span(ctx, token_span(ctx, tok));
     fprintf(stderr, "  expected a function argument with type `");
     eprint_type(expected.type);
@@ -1115,11 +1122,8 @@ static void
 emit_drop_type(struct context *ctx, enum TY ty) {
     if (ctx->is_dead_code) { return; }
     switch (ty) {
-        case TY_UNIT:
-        case TY_NEVER:
-        case TY_FN:
-        case TY_CONST_INT:
-            break;
+        case TY_UNIT: case TY_NEVER: case TY_CONST_INT: break;
+        case TY_FN: assert(!"not implemented");
         // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
         case TY_INT: fprintf(ctx->output_file, "\tadd\tsp, sp, #16\t; drop\n");
     }
@@ -1161,12 +1165,8 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "pop return value");
     switch (return_type) {
-    case TY_UNIT:
-    case TY_NEVER:
-        emit_clear_regidx(ctx, 0); break;
-    case TY_FN:
-    case TY_CONST_INT:
-        assert(!"unreachable"); break;
+    case TY_UNIT: case TY_NEVER: emit_clear_regidx(ctx, 0); break;
+    case TY_FN: case TY_CONST_INT: assert(!"unreachable"); break;
     case TY_INT: emit_pop(ctx, 0); break;
     }
     emit_comment(ctx, "fn epilogue");
@@ -1249,13 +1249,7 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
     // TODO: add explicit wrapping and saturating operators
     emit_comment(ctx, "binary op");
     assert(left.kind == TY_INT && right.kind == TY_INT);
-    if (swap) {
-        emit_pop(ctx, 11);
-        emit_pop(ctx, 12);
-    } else {
-        emit_pop(ctx, 12);
-        emit_pop(ctx, 11);
-    }
+    if (swap) { emit_pop(ctx, 11); emit_pop(ctx, 12); } else { emit_pop(ctx, 12); emit_pop(ctx, 11); }
     switch (op) {
     case BINARY_OP_TYPE_ANNO: assert(!"unreachable");
     case BINARY_OP_MUL: fprintf(ctx->output_file, "\tmul\tx11, x11, x12\n"); break;
@@ -1281,10 +1275,7 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
         break;
     case BINARY_OP_ADD: fprintf(ctx->output_file, "\tadd\tx11, x11, x12\n"); break;
     case BINARY_OP_SUB: fprintf(ctx->output_file, "\tsub\tx11, x11, x12\n"); break;
-    case BINARY_OP_SHL:
-        fprintf(ctx->output_file, "\tlsl\tx11, x11, x12\n");
-        // TODO: mask overflow? or abort?
-        break;
+    case BINARY_OP_SHL: fprintf(ctx->output_file, "\tlsl\tx11, x11, x12\n"); break;
     case BINARY_OP_SHR:
         if (left.sgnd) {
             fprintf(ctx->output_file, "\tasr\tx11, x11, x12\n");
@@ -1301,8 +1292,7 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
     case BINARY_OP_BITWISE_AND: fprintf(ctx->output_file, "\tand\tx11, x11, x12\n"); break;
     case BINARY_OP_BITWISE_XOR: fprintf(ctx->output_file, "\teor\tx11, x11, x12\n"); break;
     case BINARY_OP_BITWISE_OR: fprintf(ctx->output_file, "\torr\tx11, x11, x12\n"); break;
-    case BINARY_OP_LOGICAL_AND:
-    case BINARY_OP_LOGICAL_OR:
+    case BINARY_OP_LOGICAL_AND: case BINARY_OP_LOGICAL_OR:
         assert(!"unreachable");
     }
     emit_push(ctx, 11);
@@ -1321,13 +1311,8 @@ emit_builtin_trap(struct context *ctx) {
 static void
 require_subtype_of_int(struct context *ctx, struct type_span tysp) {
     switch (tysp.type.kind) {
-    case TY_UNIT:
-    case TY_FN:
-        fail_expected_type_int(ctx, tysp);
-    case TY_NEVER:
-    case TY_CONST_INT:
-    case TY_INT:
-        return;
+    case TY_UNIT: case TY_FN: fail_expected_type_int(ctx, tysp);
+    case TY_NEVER: case TY_CONST_INT: case TY_INT: return;
     }
 }
 
@@ -1388,8 +1373,7 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     if (type_equals(from.type, to.type)) { return to.type; }
     require_subtype(ctx, from, to);
     switch (from.type.kind) {
-    case TY_UNIT: break;
-    case TY_NEVER: break;
+    case TY_UNIT: case TY_NEVER: break;
     case TY_FN: assert(!"not implemented");
     case TY_CONST_INT:
         if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
@@ -1460,7 +1444,6 @@ parse_type(struct context *ctx) {
     // TODO: allow arbitrary type expressions
     struct token type_tok;
     take_token_expect_kind(ctx, &type_tok, TOKEN_IDENT);
-
     struct str type_str = token_str(ctx, type_tok);
     struct span span = token_span(ctx, type_tok);
     if (str_equals(type_str, UNIT_STR)) {
@@ -1619,10 +1602,8 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     struct type_node *param_type_node = fn_head.fn_sym.tysp.type.param_type_list;
     for (; param_type_node->next != NULL; param_sym_node = param_sym_node->next, param_type_node = param_type_node->next) {
             switch (param_type_node->tysp.type.kind) {
-            case TY_UNIT:
-            case TY_NEVER: break;
-            case TY_FN: assert(!"not implemented");
-            case TY_CONST_INT: assert(!"not implemented");
+            case TY_UNIT: case TY_NEVER: break;
+            case TY_FN: case TY_CONST_INT: assert(!"not implemented");
             case TY_INT:
                 if (regidx < 8) { // NOTE: the first 8 parameters are passed in registers
                     emit_push(ctx, regidx);
@@ -1642,8 +1623,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     push_scope(ctx);
     if (fn_head.param_sym_list_end != NULL) {
         assert(fn_head.param_sym_list_start != NULL);
-        fn_head.param_sym_list_end->next = ctx->scope_stack->symbol_list;
-        ctx->scope_stack->symbol_list = fn_head.param_sym_list_start;
+        push_symbol_list(ctx, fn_head.param_sym_list_start, fn_head.param_sym_list_end);
     } else {
         assert(fn_head.param_sym_list_start == NULL);
     }
@@ -1684,9 +1664,7 @@ compile_let_expr(struct context *ctx) {
         emit_drop_type(ctx, expr_tysp.type.kind);
     } else  {
         switch (expr_tysp.type.kind) {
-        case TY_UNIT:
-        case TY_NEVER:
-        case TY_FN: assert(!"not implemented");
+        case TY_UNIT: case TY_NEVER: case TY_FN: assert(!"not implemented");
         case TY_CONST_INT: {
             struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp };
             push_symbol(ctx, var_sym);
@@ -1727,16 +1705,12 @@ compile_block(struct context *ctx, bool create_scope) {
     struct token left_brace_tok;
     take_token_expect_kind(ctx, &left_brace_tok, TOKEN_LEFT_BRACE);
     struct type_span result_tysp = { .type = { .kind = TY_UNIT } };
-    struct token right_brace_tok;
-    bool was_dead_code = ctx->is_dead_code;
-    if (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
-        result_tysp = compile_expr(ctx, 0);
-        if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
-            struct token semicolon_tok;
-            take_token_expect_kind(ctx, &semicolon_tok, TOKEN_SEMICOLON);
-            emit_drop_type(ctx, result_tysp.type.kind);
-            result_tysp = (struct type_span){ .type = { .kind = TY_UNIT }, .span =  token_span(ctx, semicolon_tok)};
-        }
+    if (peek_token_kind(ctx) == TOKEN_RIGHT_BRACE) {
+        struct token right_brace_tok;
+        take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);
+        result_tysp.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
+    } else {
+        bool was_dead_code = ctx->is_dead_code;
         while (peek_token_kind(ctx) != TOKEN_RIGHT_BRACE) {
             if (result_tysp.type.kind == TY_NEVER) {
                 // TODO: warn about dead code
@@ -1758,14 +1732,9 @@ compile_block(struct context *ctx, bool create_scope) {
                 }
             }
         }
-        take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);
-    } else {
-        take_token_expect_kind(ctx, &right_brace_tok, TOKEN_RIGHT_BRACE);
-        result_tysp.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
+        take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
+        ctx->is_dead_code = was_dead_code;
     }
-    ctx->is_dead_code = was_dead_code;
-    // TODO: chain of spans for how a type was derived?
-    // result_tysp.span = (struct span){.start = left_brace_tok.loc, .end = token_end(ctx, right_brace_tok)};
     if (create_scope) { pop_scope(ctx); }
     return result_tysp;
 }
@@ -1813,8 +1782,8 @@ eval_const_int_binary_op(struct context *ctx, enum BINARY_OP op, struct type_spa
     case BINARY_OP_BITWISE_AND: result_type.value = left.type.value & right.type.value; break;
     case BINARY_OP_BITWISE_XOR: result_type.value = left.type.value ^ right.type.value; break;
     case BINARY_OP_BITWISE_OR: result_type.value = left.type.value | right.type.value; break;
-    case BINARY_OP_LOGICAL_AND: assert(!"unreachable");
-    case BINARY_OP_LOGICAL_OR: assert(!"unreachable");
+    case BINARY_OP_LOGICAL_AND: case BINARY_OP_LOGICAL_OR:
+        assert(!"unreachable");
     }
     return result_type;
 }
@@ -1824,36 +1793,24 @@ calc_binary_op_type(struct context *ctx, enum BINARY_OP op, struct type_span lef
     assert(left.type.kind == TY_INT && right.type.kind == TY_INT);
     switch (op) {
     case BINARY_OP_TYPE_ANNO: assert(!"unreachable");
-    case BINARY_OP_MUL:
-    case BINARY_OP_DIV:
-    case BINARY_OP_REM:
-    case BINARY_OP_ADD:
-    case BINARY_OP_SUB:
+    case BINARY_OP_MUL: case BINARY_OP_DIV: case BINARY_OP_REM: case BINARY_OP_ADD: case BINARY_OP_SUB:
         if (left.type.bits != 64) { fail_invalid_type_for_arithmetic(ctx, op, left); }
         if (right.type.bits != 64) { fail_invalid_type_for_arithmetic(ctx, op, right); }
         if (left.type.sgnd != right.type.sgnd || left.type.bits != right.type.bits) {
             fail_incompatible_binary_op_types(ctx, op, left, right);
         }
         return left.type;
-    case BINARY_OP_SHL:
-    case BINARY_OP_SHR:
+    case BINARY_OP_SHL: case BINARY_OP_SHR:
         return left.type;
-    case BINARY_OP_LT:
-    case BINARY_OP_LE:
-    case BINARY_OP_GT:
-    case BINARY_OP_GE:
-    case BINARY_OP_EQ:
-    case BINARY_OP_NE:
+    case BINARY_OP_LT: case BINARY_OP_LE: case BINARY_OP_GT: case BINARY_OP_GE: case BINARY_OP_EQ: case BINARY_OP_NE:
         return (struct type){ .kind = TY_INT, .sgnd = false, .bits = 1 };
-    case BINARY_OP_BITWISE_AND:
-    case BINARY_OP_BITWISE_XOR:
-    case BINARY_OP_BITWISE_OR:
+    case BINARY_OP_BITWISE_AND: case BINARY_OP_BITWISE_XOR: case BINARY_OP_BITWISE_OR:
         if (left.type.bits != right.type.bits) {
             fail_incompatible_binary_op_types(ctx, op, left, right);
         }
         return left.type;
-    case BINARY_OP_LOGICAL_AND: assert(!"unreachable");
-    case BINARY_OP_LOGICAL_OR: assert(!"unreachable");
+    case BINARY_OP_LOGICAL_AND: case BINARY_OP_LOGICAL_OR:
+        assert(!"unreachable");
     }
 }
 

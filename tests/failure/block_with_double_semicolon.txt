@@ -1,4 +1,4 @@
-error: unexpected token: SEMICOLON
+error: unexpected `;`:
  --> tests/failure/block_with_double_semicolon.spl:2:15
   |
   |     let a = 1;;

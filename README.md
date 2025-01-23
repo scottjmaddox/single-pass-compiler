@@ -109,13 +109,16 @@ reserved_number =
 - [x] `extern fn` declarations; test calling into c
 - [x] allow extra comma at the end of `fn_decl_params`/`fn_def_params`
 - [x] allow semicolons between expressions in blocks; if at the end of a block, result is `unit`
-- [ ] array type, array literals
-- [ ] slice type, slice literals
+- [ ] early `return` with value
+- [ ] `loop`, `continue`, and `break` with optional label and value
+- [ ] array type, array literals, array copy assignment, array indexing, array index assignment
+- [ ] slice type, slice literals, slice copy assignment, array slicing, array slice assignment
 - [ ] byte character literals, i.e. `b'a'`
 - [ ] byte-slice string literals, i.e. `b"Hello"`
 - [ ] `__builtin_print`?
-- [ ] `loop`, `continue`, and `break` with optional label and value
-- [ ] early `return` with value
+- [ ] wrapping arithmatic operators: `*%`, `+%`, `-%`?
+- [ ] saturating arithmatic operators: `*|`, `+|`, `-|`?
+- [ ] require explicit overflow/underflow handling for normal operators?
 - [ ] function types and indirect calls
 - [ ] basic `match` expressions
 - [ ] reserve builtin type idents, e.g. `unit`, `never`, `u[0-9]+`, `i[0-9]+`

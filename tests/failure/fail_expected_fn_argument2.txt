@@ -1,4 +1,4 @@
-error: unexpected token RIGHT_PAREN at:
+error: unexpected `)`:
  --> tests/failure/fail_expected_fn_argument2.spl:3:37
   |
   | const let main = fn() -> i64 { sub(1) }

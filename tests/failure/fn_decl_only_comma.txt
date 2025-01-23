@@ -1,6 +1,6 @@
-error: unexpected token: COMMA
+error: unexpected `,`:
  --> tests/failure/fn_decl_only_comma.spl:1:19
   |
   | const let foo: fn(,) -> i32
   |                   ^
-  expected: IDENT
+  expected identifier.

@@ -1,6 +1,6 @@
-error: unexpected token: INT_LITERAL
+error: unexpected integer literal:
  --> tests/failure/expected_const.spl:1:1
   |
   | 1
   | ^
-  expected: KEYWORD_CONST
+  expected `const`.
