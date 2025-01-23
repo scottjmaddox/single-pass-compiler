@@ -74,7 +74,7 @@ reserved_number =
 - [Simple but Powerful Pratt Parsing](https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html)
 - [Wikipedia: Operators in C and C++: Operator precedence](https://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence)
 - [Writing ARM64 code for Apple platforms](https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms)
-- [Procedure Call Standard for the Arm® 64-bit Architecture (AArch64)](https://student.cs.uwaterloo.ca/~cs452/docs/rpi4b/aapcs64.pdf)
+- [Procedure Call Standard for the Arm® 64-bit Architecture (AArch64)](https://github.com/ARM-software/abi-aa/blob/main/aapcs64/aapcs64.rst)
 
 ## TODO
 
