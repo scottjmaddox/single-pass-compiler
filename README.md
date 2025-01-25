@@ -12,7 +12,7 @@ make
 
 ## Grammar
 
-The currently supported grammar, in [extended Backus–Naur form (EBNF)](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form):
+The currently supported grammar, in [extended Backus–Naur form (EBNF)](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form), extended with character ranges (`..`) and the "and-predicate" (`&`) from [Parsing expression grammar](https://en.wikipedia.org/wiki/Parsing_expression_grammar).
 
 ```ebnf
 program = { const_let } ;
@@ -27,15 +27,21 @@ fn_def_params = { fn_def_param "," } [ fn_def_param ] ;
 fn_def_param = ident ":" type_expr ;
 type_expr = ident ;
 block = "{" { expr [ ";" ] } "}" ;
-expr = block | if_expr | let_expr  | return_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
+expr = block | labeled_block | if_expr | let_expr | loop_expr | break_expr | continue_expr | return_expr
+     | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
+labeled_block = label_ident ":" block ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident [ ":" type_expr ] "=" expr ;
+loop_expr = [ label_ident ":" ] "loop" block ;
+break_expr = "break" [ label_ident ] ( &";"  | expr ) ;
+continue_expr = "continue" [ label_ident ] ;
 return_expr = "return" expr ;
 fn_call = ident "(" fn_args ")" ;
 fn_args = { expr "," } [ expr ] ;
 var_expr = ident ;
 op_expr = prefix_op expr | expr infix_op expr ;
 
+label_ident = "'" ident ;
 ident = alpha { alphanumeric } ;
 int_literal = dec_literal | bin_literal | oct_literal | hex_literal ;
 dec_literal = dec_digit { "_" | dec_digit } ;
@@ -112,7 +118,29 @@ reserved_number =
 - [x] allow semicolons between expressions in blocks; if at the end of a block, result is `unit`
 - [x] early `return` with value
 - [x] test self recursion and mutual recursion
-- [ ] `loop`, `continue`, and `break` with optional label and value
+- [x] `loop`, `continue`, and `break` with optional label and value
+  - [x] labeled blocks are breakable
+  - [x] test loop without break has never type
+  - [x] test loop with dead break has never type
+  - [x] test loop with break expr has expr's type and value
+  - [x] test loop with `break;` has unit type
+  - [x] fix variable definition slot inconsistencies
+  - [ ] adjust stack prior to `continue` branch
+  - [ ] test loop with var defs adjusts stack appropriately
+  - [ ] test nested loop with labeled break expr has expr's type and value
+  - [ ] test labeled block with break expr has break type and value
+  - [ ] test labeled block with `break 'label;` has unit type
+  - [ ] test labeled block type mismatch between `break` type and block type
+  - [ ] test labeled block with var defs before and after `break` adjusts stack appropriately
+  - [ ] test labeled block with var defs after `break` does not adjust stack
+  - [ ] test `fail_undefined_label`
+  - [ ] test `fail_loop_non_unit`
+  - [ ] test `fail_unlabeled_break_outside_loop`
+  - [ ] test `fail_continue_outside_loop`
+- [ ] rename `fail_fn_decl_with_def` to `fail_fn_decl_without_def` and fix error message
+- [ ] use `fp` for `x29` and `lr` for `x30`
+- [ ] mutating assignment
+  - [ ] test loop continue
 - [ ] array type, array literals, array copy assignment, array indexing, array index assignment
 - [ ] slice type, slice literals, slice copy assignment, array slicing, array slice assignment
 - [ ] byte character literals, i.e. `b'a'`

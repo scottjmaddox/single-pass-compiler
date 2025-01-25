@@ -1,0 +1,5 @@
+const let main = fn() {
+    loop {
+        if 0 { break; }
+    }: never
+}

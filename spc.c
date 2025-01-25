@@ -15,7 +15,7 @@
 #include <assert.h>        // For assert()
 #include <limits.h>        // For ULLONG_MAX, LLONG_MAX
 
-#define MAX_TOKEN_LOOKAHEAD 2
+#define MAX_TOKEN_LOOKAHEAD 4
 
 enum TOKEN {
     TOKEN_EOF,
@@ -52,10 +52,14 @@ enum TOKEN {
     TOKEN_KEYWORD_FN,
     TOKEN_KEYWORD_LET,
     TOKEN_KEYWORD_ELSE,
+    TOKEN_KEYWORD_LOOP,
+    TOKEN_KEYWORD_BREAK,
     TOKEN_KEYWORD_CONST,
     TOKEN_KEYWORD_EXTERN,
     TOKEN_KEYWORD_RETURN,
+    TOKEN_KEYWORD_CONTINUE,
     TOKEN_IDENT,
+    TOKEN_LABEL_IDENT,
     TOKEN_INT_LITERAL,
     TOKEN_RESERVED,
     TOKEN_UNKNOWN,
@@ -96,10 +100,14 @@ static char *TOKEN_DISLPAY[] = {
     [TOKEN_KEYWORD_FN]          = "`fn`",
     [TOKEN_KEYWORD_LET]         = "`let`",
     [TOKEN_KEYWORD_ELSE]        = "`else`",
+    [TOKEN_KEYWORD_LOOP]        = "`loop`",
+    [TOKEN_KEYWORD_BREAK]       = "`break`",
     [TOKEN_KEYWORD_CONST]       = "`const`",
     [TOKEN_KEYWORD_EXTERN]      = "`extern`",
     [TOKEN_KEYWORD_RETURN]      = "`return`",
+    [TOKEN_KEYWORD_CONTINUE]    = "`continue`",
     [TOKEN_IDENT]               = "identifier",
+    [TOKEN_LABEL_IDENT]         = "label identifier",
     [TOKEN_INT_LITERAL]         = "integer literal",
     [TOKEN_RESERVED]            = "reserved token",
     [TOKEN_UNKNOWN]             = "unknown token",
@@ -215,9 +223,12 @@ static struct str IF_STR = {.len = sizeof "if" - 1, .ptr = "if"};
 static struct str FN_STR = {.len = sizeof "fn" - 1, .ptr = "fn"};
 static struct str LET_STR = {.len = sizeof "let" - 1, .ptr = "let"};
 static struct str ELSE_STR = {.len = sizeof "else" - 1, .ptr = "else"};
+static struct str LOOP_STR = {.len = sizeof "loop" - 1, .ptr = "loop"};
+static struct str BREAK_STR = {.len = sizeof "break" - 1, .ptr = "break"};
 static struct str CONST_STR = {.len = sizeof "const" - 1, .ptr = "const"};
 static struct str EXTERN_STR = {.len = sizeof "extern" - 1, .ptr = "extern"};
 static struct str RETURN_STR = {.len = sizeof "return" - 1, .ptr = "return"};
+static struct str CONTINUE_STR = {.len = sizeof "continue" - 1, .ptr = "continue"};
 
 static struct str WILDCARD_STR = {.len = sizeof "_" - 1, .ptr = "_"};
 
@@ -301,9 +312,21 @@ struct fn_header {
     struct symbol_node *param_sym_list_end;
 };
 
+struct scope {
+    struct symbol_node *symbol_list;
+    int cum_var_frame_offset; // cumulative variable offset from the frame pointer (x29)
+    bool is_loop; // true if this a loop scope
+    bool has_label; // true if this scope has a label
+    bool has_break_tysp; // true if this scope has a break expression type
+    size_t continue_label_idx; // this scope's continue label index, if non-zero
+    size_t break_label_idx; // this scope's break label index, if non-zero
+    struct token label_tok; // the label token, if any
+    struct type_span break_tysp; // the type of the break expression, if any
+};
+
 struct scope_node {
     struct scope_node *next;
-    struct symbol_node *symbol_list;
+    struct scope scope;
 };
 
 struct context {
@@ -327,8 +350,7 @@ struct context {
     struct scope_node *free_scope_nodes;
     // Compiler state
     struct type_span declared_return_tysp;
-    int cum_var_frame_offset; // cumulative variable offset from the frame pointer (x29)
-    size_t local_label_count;
+    size_t last_local_label_idx;
     struct scope_node *scope_stack;
     bool is_dead_code;
 };
@@ -422,31 +444,32 @@ free_scope_node(struct context *ctx, struct scope_node *node) {
 static void
 push_symbol(struct context *ctx, struct symbol sym) {
     struct symbol_node *node = alloc_symbol_node(ctx);
-    *node = (struct symbol_node){ .next = ctx->scope_stack->symbol_list, .sym = sym };
-    ctx->scope_stack->symbol_list = node;
+    *node = (struct symbol_node){ .next = ctx->scope_stack->scope.symbol_list, .sym = sym };
+    ctx->scope_stack->scope.symbol_list = node;
 }
 
 static void
 push_symbol_list(struct context *ctx, struct symbol_node *start, struct symbol_node *end) {
     assert(start != NULL && end != NULL);
-    end->next = ctx->scope_stack->symbol_list;
-    ctx->scope_stack->symbol_list = start;
+    end->next = ctx->scope_stack->scope.symbol_list;
+    ctx->scope_stack->scope.symbol_list = start;
 }
 
-static void
-push_scope(struct context *ctx) {
-    struct scope_node *node = alloc_scope_node(ctx);
-    *node = (struct scope_node){ .next = ctx->scope_stack, .symbol_list = NULL };
-    ctx->scope_stack = node;
+static struct scope_node *
+push_scope(struct context *ctx, struct scope scope) {
+    struct scope_node *scope_node = alloc_scope_node(ctx);
+    *scope_node = (struct scope_node){ .next = ctx->scope_stack, .scope = scope };
+    ctx->scope_stack = scope_node;
+    return scope_node;
 }
 
 static void
 pop_scope(struct context *ctx) {
-    struct scope_node *scope = ctx->scope_stack;
-    ctx->scope_stack = scope->next;
-    while (scope->symbol_list != NULL) {
-        struct symbol_node *node = scope->symbol_list;
-        scope->symbol_list = node->next;
+    struct scope_node *scope_node = ctx->scope_stack;
+    ctx->scope_stack = scope_node->next;
+    while (scope_node->scope.symbol_list != NULL) {
+        struct symbol_node *node = scope_node->scope.symbol_list;
+        scope_node->scope.symbol_list = node->next;
         struct type ty = node->sym.tysp.type;
         if (ty.kind == TY_FN) {
             while (ty.param_type_list != NULL) {
@@ -457,7 +480,7 @@ pop_scope(struct context *ctx) {
         }
         free_symbol_node(ctx, node);
     }
-    free_scope_node(ctx, scope);
+    free_scope_node(ctx, scope_node);
 }
 
 static bool
@@ -507,11 +530,31 @@ type_equals(struct type a, struct type b) {
 
 static struct symbol_node*
 find_symbol_node(struct context *ctx, struct str ident) {
-    for(struct scope_node *scope = ctx->scope_stack; scope != NULL; scope = scope->next) {
-        for(struct symbol_node *node = scope->symbol_list; node != NULL; node = node->next) {
+    for(struct scope_node *scope_node = ctx->scope_stack; scope_node != NULL; scope_node = scope_node->next) {
+        for(struct symbol_node *node = scope_node->scope.symbol_list; node != NULL; node = node->next) {
             if (str_equals(token_str(ctx, node->sym.ident_tok), ident)) {
                 return node;
             }
+        }
+    }
+    return NULL;
+}
+
+static struct scope_node*
+find_labeled_scope_node(struct context *ctx, struct str label) {
+    for(struct scope_node *scope_node = ctx->scope_stack; scope_node != NULL; scope_node = scope_node->next) {
+        if (scope_node->scope.has_label && str_equals(token_str(ctx, scope_node->scope.label_tok), label)) {
+            return scope_node;
+        }
+    }
+    return NULL;
+}
+
+static struct scope_node*
+find_loop_scope_node(struct context *ctx) {
+    for(struct scope_node *scope_node = ctx->scope_stack; scope_node != NULL; scope_node = scope_node->next) {
+        if (scope_node->scope.is_loop) {
+            return scope_node;
         }
     }
     return NULL;
@@ -638,6 +681,17 @@ lex(struct context *ctx) {
             }
             tok.kind = TOKEN_AMPERSAND;
             return tok;
+        case '\'':
+            i = tok.loc.idx + 1;
+            while (i < len) {
+                switch (src[i]) {
+                case '_': case 'A' ... 'Z': case 'a' ... 'z': case '0' ... '9': i += 1; continue;
+                }
+                break;
+            }
+            tok.len = i - tok.loc.idx;
+            tok.kind = TOKEN_LABEL_IDENT;
+            return tok;
         case '(': tok.kind = TOKEN_LEFT_PAREN; return tok;
         case ')': tok.kind = TOKEN_RIGHT_PAREN; return tok;
         case '+': tok.kind = TOKEN_PLUS; return tok;
@@ -731,13 +785,18 @@ lex(struct context *ctx) {
                 break;
             case 4:
                 if (str_equals(token_str(ctx, tok), ELSE_STR)) { tok.kind = TOKEN_KEYWORD_ELSE; return tok; }
+                if (str_equals(token_str(ctx, tok), LOOP_STR)) { tok.kind = TOKEN_KEYWORD_LOOP; return tok; }
                 break;
             case 5:
+                if (str_equals(token_str(ctx, tok), BREAK_STR)) { tok.kind = TOKEN_KEYWORD_BREAK; return tok; }
                 if (str_equals(token_str(ctx, tok), CONST_STR)) { tok.kind = TOKEN_KEYWORD_CONST; return tok; }
                 break;
             case 6:
                 if (str_equals(token_str(ctx, tok), EXTERN_STR)) { tok.kind = TOKEN_KEYWORD_EXTERN; return tok; }
                 if (str_equals(token_str(ctx, tok), RETURN_STR)) { tok.kind = TOKEN_KEYWORD_RETURN; return tok; }
+                break;
+            case 7:
+                if (str_equals(token_str(ctx, tok), CONTINUE_STR)) { tok.kind = TOKEN_KEYWORD_CONTINUE; return tok; }
                 break;
             }
             tok.kind = TOKEN_IDENT;
@@ -808,6 +867,12 @@ static enum TOKEN
 peek_token_kind(struct context *ctx) {
     if (ctx->token_count == 0) { fill_tokens(ctx); }
     return ctx->tokens[ctx->token_offset].kind;
+}
+
+struct span
+peek_token_span(struct context *ctx) {
+    if (ctx->token_count == 0) { fill_tokens(ctx); }
+    return token_span(ctx, ctx->tokens[ctx->token_offset]);
 }
 
 ///////////////////////////////
@@ -945,6 +1010,13 @@ fail_undefined_type(struct context *ctx, struct token tok) {
 }
 
 static void
+fail_undefined_label(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: undefined label\n");
+    eprint_span(ctx, token_span(ctx, tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
 fail_undefined_var(struct context *ctx, struct token tok) {
     fprintf(stderr, "error: undefined variable\n");
     eprint_span(ctx, token_span(ctx, tok));
@@ -1031,12 +1103,36 @@ fail_type_anno_needed(struct context *ctx, struct type_span tysp) {
 }
 
 static void
+fail_loop_non_unit(struct context *ctx, struct type_span loop) {
+    fprintf(stderr, "error: loop has non-unit type `");
+    eprint_type(loop.type);
+    fprintf(stderr, "`:\n");
+    eprint_span(ctx, loop.span);
+    fprintf(stderr, "  expected type `unit`.\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
 fail_if_without_else_non_unit(struct context *ctx, struct type_span then) {
     fprintf(stderr, "error: if without else has non-unit type `");
     eprint_type(then.type);
     fprintf(stderr, "`:\n");
     eprint_span(ctx, then.span);
     fprintf(stderr, "  expected type `unit` or a matching else type.\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_unlabeled_break_outside_loop(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: unlabeled break outside of a loop:\n");
+    eprint_span(ctx, token_span(ctx, tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_continue_outside_loop(struct context *ctx, struct token tok) {
+    fprintf(stderr, "error: continue outside of a loop:\n");
+    eprint_span(ctx, token_span(ctx, tok));
     exit(EXIT_FAILURE);
 }
 
@@ -1156,7 +1252,6 @@ emit_fn_prologue(struct context *ctx, struct str name) {
         (int)name.len, name.ptr,
         (int)name.len, name.ptr
     );
-    ctx->cum_var_frame_offset = 0;
 }
 
 static void
@@ -1166,24 +1261,9 @@ emit_adjust_stack_pointer(struct context *ctx, int amount) {
 }
 
 static void
-emit_pop_return_value(struct context *ctx, enum TY return_type) {
+emit_fn_epilogue(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
-    emit_comment(ctx, "pop return value");
-    switch (return_type) {
-    case TY_UNIT: case TY_NEVER: emit_clear_regidx(ctx, 0); break;
-    case TY_FN: case TY_CONST_INT: assert(!"unreachable"); break;
-    case TY_INT: emit_pop(ctx, 0); break;
-    }
-}
-
-static void
-emit_fn_epilogue(struct context *ctx, enum TY return_type) {
-    if (ctx->is_dead_code) { return; }
-    emit_pop_return_value(ctx, return_type);
     emit_comment(ctx, "fn epilogue");
-    if (ctx->cum_var_frame_offset != 0) {
-        emit_adjust_stack_pointer(ctx, -ctx->cum_var_frame_offset);
-    }
     fprintf(ctx->output_file,
         "\tldp\tx29, x30, [sp], #16\n"
         "\tret\n"
@@ -1191,13 +1271,8 @@ emit_fn_epilogue(struct context *ctx, enum TY return_type) {
 }
 
 static void
-emit_fn_early_return(struct context *ctx, enum TY return_type) {
+emit_fn_early_return(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
-    emit_pop_return_value(ctx, return_type);
-    emit_comment(ctx, "early return");
-    if (ctx->cum_var_frame_offset != 0) {
-        emit_adjust_stack_pointer(ctx, -ctx->cum_var_frame_offset);
-    }
     fprintf(ctx->output_file,
         "\tldp\tx29, x30, [sp], #16\n"
         "\tret\n");
@@ -1210,29 +1285,35 @@ emit_fn_call(struct context *ctx, char *name, size_t name_len) {
 }
 
 static void
-emit_local_label(struct context *ctx, size_t label) {
+emit_local_label(struct context *ctx, size_t label_idx) {
     if (ctx->is_dead_code) { return; }
-    fprintf(ctx->output_file, "%zu:\n", label);
+    fprintf(ctx->output_file, "%zu:\n", label_idx);
 }
 
 static void
-emit_local_forward_branch(struct context *ctx, size_t label) {
+emit_local_forward_branch(struct context *ctx, size_t label_idx) {
     if (ctx->is_dead_code) { return; }
-    fprintf(ctx->output_file, "\tb\t%zuf\n", label);
+    fprintf(ctx->output_file, "\tb\t%zuf\n", label_idx);
 }
 
 static void
-emit_local_forward_branch_if_zero(struct context *ctx, size_t label) {
+emit_local_backward_branch(struct context *ctx, size_t label_idx) {
+    if (ctx->is_dead_code) { return; }
+    fprintf(ctx->output_file, "\tb\t%zub\n", label_idx);
+}
+
+static void
+emit_local_forward_branch_if_zero(struct context *ctx, size_t label_idx) {
     if (ctx->is_dead_code) { return; }
     emit_pop(ctx, 11);
-    fprintf(ctx->output_file, "\tcbz\tx11, %zuf\n", label);
+    fprintf(ctx->output_file, "\tcbz\tx11, %zuf\n", label_idx);
 }
 
 static void
-emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label) {
+emit_local_forward_branch_if_nonzero(struct context *ctx, size_t label_idx) {
     if (ctx->is_dead_code) { return; }
     emit_pop(ctx, 11);
-    fprintf(ctx->output_file, "\tcbnz\tx11, %zuf\n", label);
+    fprintf(ctx->output_file, "\tcbnz\tx11, %zuf\n", label_idx);
 }
 
 static void
@@ -1325,7 +1406,7 @@ emit_binary_op(struct context *ctx, enum BINARY_OP op, struct type left, struct 
 static void
 emit_builtin_trap(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
-    fprintf(ctx->output_file, "\tbrk\t#0\n");
+    fprintf(ctx->output_file, "\tbrk\t#0\t; __builtin_trap()\n");
 }
 
 ///////////////////////
@@ -1409,11 +1490,56 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     return to.type;
 }
 
+static void
+push_return_type(struct context *ctx, struct type return_type) {
+    emit_comment(ctx, "push fn return");
+    switch (return_type.kind) {
+        case TY_UNIT: case TY_NEVER: break;
+        case TY_FN: case TY_CONST_INT: assert(!"not implemented");
+        case TY_INT: emit_push(ctx, 0); break;
+    }
+}
+
+static void
+pop_return_type(struct context *ctx, struct type return_type) {
+    emit_comment(ctx, "pop fn return");
+    switch (return_type.kind) {
+    case TY_UNIT: emit_clear_regidx(ctx, 0); break;
+    case TY_NEVER: break;
+    case TY_FN: case TY_CONST_INT: assert(!"not implemented");
+    case TY_INT: emit_pop(ctx, 0); break;
+    }
+}
+
+static void
+push_block_type(struct context *ctx, struct type block_type) {
+    emit_comment(ctx, "push block result");
+    switch (block_type.kind) {
+    case TY_UNIT: case TY_NEVER: case TY_CONST_INT: break;
+    case TY_FN: assert(!"not implemented");
+    case TY_INT: emit_push(ctx, 11); break;
+    }
+}
+
+static void
+pop_block_type(struct context *ctx, struct type block_type) {
+    emit_comment(ctx, "pop block result");
+    switch (block_type.kind) {
+    case TY_UNIT: case TY_NEVER: case TY_CONST_INT: break;
+    case TY_FN: assert(!"not implemented");
+    case TY_INT: emit_pop(ctx, 11); break;
+    }
+}
+
 static void compile_program(struct context *ctx);
 static void compile_const_let(struct context *ctx);
 static void compile_fn_decl(struct context *ctx, struct token *name_tok);
 static void compile_fn_def(struct context *ctx, struct token *name_tok);
 static struct type_span compile_let_expr(struct context *ctx);
+static struct type_span compile_labeled_block(struct context *ctx);
+static struct type_span compile_loop_expr(struct context *ctx);
+static struct type_span compile_break_expr(struct context *ctx);
+static struct type_span compile_continue_expr(struct context *ctx);
 static struct type_span compile_return_expr(struct context *ctx);
 static struct type_span compile_var_expr(struct context *ctx);
 static struct type_span compile_block(struct context *ctx, bool create_scope);
@@ -1427,11 +1553,11 @@ static void
 compile_program(struct context *ctx) {
     // EBNF: program = { const_let } ;
     emit_program_prologue(ctx);
-    push_scope(ctx);
+    push_scope(ctx, (struct scope){ 0 });
     while (peek_token_kind(ctx) != TOKEN_EOF) {
         compile_const_let(ctx);
     }
-    for(struct symbol_node *sym_node = ctx->scope_stack->symbol_list; sym_node != NULL; sym_node = sym_node->next) {
+    for(struct symbol_node *sym_node = ctx->scope_stack->scope.symbol_list; sym_node != NULL; sym_node = sym_node->next) {
         if (sym_node->sym.is_forward_decl && !sym_node->sym.is_satisfied) {
             fail_fn_decl_with_def(ctx, sym_node->sym);
         }
@@ -1625,6 +1751,7 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     int stacked_arg_frame_offset = 16; // NOTE: the first 16 bytes hold the frame pointer and return address
     struct symbol_node *param_sym_node = fn_head.param_sym_list_start;
     struct type_node *param_type_node = fn_head.fn_sym.tysp.type.param_type_list;
+    int cum_var_frame_offset = 0;
     for (; param_type_node->next != NULL; param_sym_node = param_sym_node->next, param_type_node = param_type_node->next) {
             switch (param_type_node->tysp.type.kind) {
             case TY_UNIT: case TY_NEVER: break;
@@ -1633,8 +1760,8 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
                 if (regidx < 8) { // NOTE: the first 8 parameters are passed in registers
                     emit_push(ctx, regidx);
                     regidx += 1;
-                    ctx->cum_var_frame_offset -= 16;
-                    param_sym_node->sym.var_frame_offset = ctx->cum_var_frame_offset;
+                    cum_var_frame_offset -= 16;
+                    param_sym_node->sym.var_frame_offset = cum_var_frame_offset;
                 } else { // NOTE: the rest are passed on the stack
                     param_sym_node->sym.var_frame_offset = stacked_arg_frame_offset;
                     stacked_arg_frame_offset += 8;
@@ -1644,8 +1771,8 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     }
     ctx->declared_return_tysp = param_type_node->tysp;
     push_symbol(ctx, fn_head.fn_sym);
-    ctx->local_label_count = 0;
-    push_scope(ctx);
+    ctx->last_local_label_idx = 0;
+    struct scope_node *scope_node = push_scope(ctx, (struct scope){ .cum_var_frame_offset = cum_var_frame_offset });
     if (fn_head.param_sym_list_end != NULL) {
         assert(fn_head.param_sym_list_start != NULL);
         push_symbol_list(ctx, fn_head.param_sym_list_start, fn_head.param_sym_list_end);
@@ -1654,13 +1781,18 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     }
     struct type_span block_return_tysp = compile_block(ctx, false);
     struct type return_type = require_subtype_coerce(ctx, block_return_tysp, ctx->declared_return_tysp);
-    emit_fn_epilogue(ctx, return_type.kind);
+    pop_return_type(ctx, return_type);
+    if (scope_node->scope.cum_var_frame_offset != 0) {
+        emit_adjust_stack_pointer(ctx, -scope_node->scope.cum_var_frame_offset);
+    }
     pop_scope(ctx);
+    emit_fn_epilogue(ctx);
 }
 
 static struct type_span
 compile_let_expr(struct context *ctx) {
     // EBNF: let_expr = "let" ident [ ":" type_expr ] "=" expr ;
+    emit_comment(ctx, "begin let");
     struct token let_tok;
     take_token_expect_kind(ctx, &let_tok, TOKEN_KEYWORD_LET);
     struct token name_tok;
@@ -1695,23 +1827,172 @@ compile_let_expr(struct context *ctx) {
             push_symbol(ctx, var_sym);
         } break;
         case TY_INT: {
-            ctx->cum_var_frame_offset -= 16;
-            struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp, .var_frame_offset = ctx->cum_var_frame_offset };
+            ctx->scope_stack->scope.cum_var_frame_offset -= 16;
+            struct symbol var_sym = { .ident_tok = name_tok, .tysp = expr_tysp,
+                .var_frame_offset = ctx->scope_stack->scope.cum_var_frame_offset };
             push_symbol(ctx, var_sym);
         } break;
         }
     }
+    emit_comment(ctx, "end let");
     return return_tysp;
+}
+
+static struct type_span
+compile_labeled_block(struct context *ctx) {
+    // EBNF: labeled_block = label_ident ":" block ;
+    emit_comment(ctx, "begin labeled block");
+    struct token label_tok;
+    take_token_expect_kind(ctx, &label_tok, TOKEN_LABEL_IDENT);
+    take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+    // TODO: warn on shadowed labels?
+    int outer_cum_var_frame_offset = ctx->scope_stack->scope.cum_var_frame_offset;
+    size_t break_label_idx = ++ctx->last_local_label_idx;
+    struct scope_node *scope_node = push_scope(ctx, (struct scope){
+        .cum_var_frame_offset = outer_cum_var_frame_offset,
+        .has_label = true, .label_tok = label_tok, .break_label_idx = break_label_idx });
+    struct type_span block_tysp = compile_block(ctx, false);
+    if (scope_node->scope.has_break_tysp) { require_subtype_coerce(ctx, block_tysp, scope_node->scope.break_tysp); }
+    int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
+    if (stack_adjustment != 0) {
+        pop_block_type(ctx, block_tysp.type);
+        emit_adjust_stack_pointer(ctx, stack_adjustment);
+        push_block_type(ctx, block_tysp.type);
+    }
+    emit_local_label(ctx, break_label_idx);
+    pop_scope(ctx);
+    emit_comment(ctx, "end labeled block");
+    return block_tysp;
+}
+
+static struct type_span
+compile_loop_expr(struct context *ctx) {
+    // EBNF: loop_expr = [ label_ident ":" ] "loop" block ;
+    emit_comment(ctx, "begin loop");
+    bool has_label = false;
+    struct token label_tok = { 0 };
+    if (peek_token_kind(ctx) == TOKEN_LABEL_IDENT) {
+        has_label = true;
+        take_token_expect_kind(ctx, &label_tok, TOKEN_LABEL_IDENT);
+        take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+        // TODO: warn on shadowed labels?
+    }
+    struct token loop_tok;
+    take_token_expect_kind(ctx, &loop_tok, TOKEN_KEYWORD_LOOP);
+    size_t continue_label_idx = ++ctx->last_local_label_idx;
+    size_t break_label_idx = ++ctx->last_local_label_idx;
+    int outer_cum_var_frame_offset = ctx->scope_stack->scope.cum_var_frame_offset;
+    struct scope_node *scope_node = push_scope(ctx, (struct scope){
+        .cum_var_frame_offset = outer_cum_var_frame_offset,
+        .is_loop = true, .has_label = has_label, .label_tok = label_tok,
+        .continue_label_idx = continue_label_idx, .break_label_idx = break_label_idx });
+    emit_local_label(ctx, continue_label_idx);
+    struct type_span block_tysp = compile_block(ctx, false);
+    if (!is_subtype(block_tysp.type, (struct type){ .kind = TY_UNIT })) { fail_loop_non_unit(ctx, block_tysp); }
+    struct span loop_span = { .start = loop_tok.loc, .end = block_tysp.span.end };
+    struct type_span result_tysp = { .type = { .kind = TY_NEVER }, .span = loop_span };
+    if (scope_node->scope.has_break_tysp) { result_tysp = scope_node->scope.break_tysp; }
+    int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
+    if (stack_adjustment != 0) {
+        // NOTE: block_tysp \subtype TY_UNIT, so no need to pop/push block type
+        emit_adjust_stack_pointer(ctx, stack_adjustment);
+    }
+    emit_local_label(ctx, break_label_idx);
+    pop_scope(ctx);
+    emit_comment(ctx, "end loop");
+    return result_tysp;
+}
+
+static struct type_span
+compile_break_expr(struct context *ctx) {
+    // EBNF: break_expr = "break" [ label_ident ] ( &";"  | expr ) ;
+    emit_comment(ctx, "begin break");
+    struct token break_tok;
+    take_token_expect_kind(ctx, &break_tok, TOKEN_KEYWORD_BREAK);
+    bool has_label = false;
+    struct token label_tok;
+    if (peek_token_kind(ctx) == TOKEN_LABEL_IDENT) {
+        has_label = true;
+        take_token_expect_kind(ctx, &label_tok, TOKEN_LABEL_IDENT);
+    }
+    struct scope_node *break_scope_node = NULL;
+    if (has_label) {
+        break_scope_node = find_labeled_scope_node(ctx, token_str(ctx, label_tok));
+        if (break_scope_node == NULL) { fail_undefined_label(ctx, label_tok); }
+    } else {
+        break_scope_node = find_loop_scope_node(ctx);
+        if (break_scope_node == NULL) { fail_unlabeled_break_outside_loop(ctx, break_tok); }
+    }
+    struct type_span expr_tysp = { 0 };
+    if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
+        expr_tysp = (struct type_span){ .type = { .kind = TY_UNIT }, .span = peek_token_span(ctx) };
+    } else {
+        expr_tysp = compile_expr(ctx, 0);
+    }
+    if (break_scope_node->scope.has_break_tysp) {
+        require_subtype_coerce(ctx, expr_tysp, break_scope_node->scope.break_tysp);
+    } else if (expr_tysp.type.kind == TY_CONST_INT) {
+        fail_type_anno_needed(ctx, expr_tysp);
+    } else if (!ctx->is_dead_code) {
+        break_scope_node->scope.has_break_tysp = true;
+        break_scope_node->scope.break_tysp = expr_tysp;
+    } // TODO: warn about dead code
+    assert(break_scope_node->next != NULL);
+    int outer_cum_var_frame_offset = break_scope_node->next->scope.cum_var_frame_offset;
+    int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
+    if (stack_adjustment != 0) {
+        if (break_scope_node->scope.has_break_tysp) {
+            struct type break_type = break_scope_node->scope.break_tysp.type;
+            pop_block_type(ctx, break_type);
+            emit_adjust_stack_pointer(ctx, stack_adjustment);
+            push_block_type(ctx, break_type);
+        } else {
+            emit_adjust_stack_pointer(ctx, stack_adjustment);
+        }
+    }
+    emit_local_forward_branch(ctx, break_scope_node->scope.break_label_idx);
+    emit_comment(ctx, "end break");
+    return (struct type_span){ .type = { .kind = TY_NEVER }, .span = token_span(ctx, break_tok) };
+}
+
+static struct type_span
+compile_continue_expr(struct context *ctx) {
+    // EBNF: continue_expr = "continue" [ label_ident ] ;
+    struct token continue_tok;
+    take_token_expect_kind(ctx, &continue_tok, TOKEN_KEYWORD_CONTINUE);
+    bool has_label = false;
+    struct token label_tok;
+    if (peek_token_kind(ctx) == TOKEN_LABEL_IDENT) {
+        has_label = true;
+        take_token_expect_kind(ctx, &label_tok, TOKEN_LABEL_IDENT);
+    }
+    struct scope_node *scope_node = NULL;
+    if (has_label) {
+        scope_node = find_labeled_scope_node(ctx, token_str(ctx, label_tok));
+        if (scope_node == NULL) { fail_undefined_label(ctx, label_tok); }
+    } else {
+        scope_node = find_loop_scope_node(ctx);
+        if (scope_node == NULL) { fail_continue_outside_loop(ctx, continue_tok); }
+    }
+    emit_comment(ctx, "continue");
+    emit_local_backward_branch(ctx, scope_node->scope.continue_label_idx);
+    return (struct type_span){ .type = { .kind = TY_NEVER }, .span = token_span(ctx, continue_tok) };
 }
 
 static struct type_span
 compile_return_expr(struct context *ctx) {
     // EBNF: return_expr = "return" expr ;
+    emit_comment(ctx, "begin return");
     struct token return_tok;
     take_token_expect_kind(ctx, &return_tok, TOKEN_KEYWORD_RETURN);
     struct type_span return_tysp = compile_expr(ctx, 0);
     struct type return_type = require_subtype_coerce(ctx, return_tysp, ctx->declared_return_tysp);
-    emit_fn_early_return(ctx, return_type.kind);
+    pop_return_type(ctx, return_type);
+    if (ctx->scope_stack->scope.cum_var_frame_offset != 0) {
+        emit_adjust_stack_pointer(ctx, -ctx->scope_stack->scope.cum_var_frame_offset);
+    }
+    emit_fn_early_return(ctx);
+    emit_comment(ctx, "end return");
     return (struct type_span){ .type = { .kind = TY_NEVER }, .span = token_span(ctx, return_tok) };
 }
 
@@ -1737,7 +2018,11 @@ compile_var_expr(struct context *ctx) {
 static struct type_span
 compile_block(struct context *ctx, bool create_scope) {
     // EBNF: block = "{" { expr [ ";" ] } "}" ;
-    if (create_scope) { push_scope(ctx); }
+    emit_comment(ctx, "begin block");
+    int outer_cum_var_frame_offset = ctx->scope_stack->scope.cum_var_frame_offset;
+    if (create_scope) {
+        push_scope(ctx, (struct scope){ .cum_var_frame_offset = outer_cum_var_frame_offset });
+    }
     struct token left_brace_tok;
     take_token_expect_kind(ctx, &left_brace_tok, TOKEN_LEFT_BRACE);
     struct type_span result_tysp = { .type = { .kind = TY_UNIT } };
@@ -1775,7 +2060,16 @@ compile_block(struct context *ctx, bool create_scope) {
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
         ctx->is_dead_code = was_dead_code;
     }
-    if (create_scope) { pop_scope(ctx); }
+    if (create_scope) {
+        int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
+        if (stack_adjustment != 0) {
+            pop_block_type(ctx, result_tysp.type);
+            emit_adjust_stack_pointer(ctx, stack_adjustment);
+            push_block_type(ctx, result_tysp.type);
+        }
+        pop_scope(ctx);
+    }
+    emit_comment(ctx, "end block");
     return result_tysp;
 }
 
@@ -1856,13 +2150,17 @@ calc_binary_op_type(struct context *ctx, enum BINARY_OP op, struct type_span lef
 
 static struct type_span
 compile_expr(struct context *ctx, int min_binding_power) {
-    // EBNF: expr = block | if_expr | let_expr | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
+    // EBNF: expr = block | labeled_block | if_expr | let_expr | loop_expr | break_expr | continue_expr | return_expr
+    //            | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
     struct type_span left_tysp = { 0 };
     struct type_span right_tysp = { 0 };
     switch (peek_token_kind(ctx)) {
     case TOKEN_LEFT_BRACE: left_tysp = compile_block(ctx, true); break;
     case TOKEN_KEYWORD_IF: left_tysp = compile_if_expr(ctx); break;
     case TOKEN_KEYWORD_LET: left_tysp = compile_let_expr(ctx); break;
+    case TOKEN_KEYWORD_LOOP: left_tysp = compile_loop_expr(ctx); break;
+    case TOKEN_KEYWORD_BREAK: left_tysp = compile_break_expr(ctx); break;
+    case TOKEN_KEYWORD_CONTINUE: left_tysp = compile_continue_expr(ctx); break;
     case TOKEN_KEYWORD_RETURN: left_tysp = compile_return_expr(ctx); break;
     case TOKEN_LEFT_PAREN: {
         struct token left_paren_tok, right_paren_tok;
@@ -1877,6 +2175,17 @@ compile_expr(struct context *ctx, int min_binding_power) {
             left_tysp = compile_fn_call(ctx);
         } else {
             left_tysp = compile_var_expr(ctx);
+        }
+        break;
+    case TOKEN_LABEL_IDENT:
+        if (peek_token_kind_at(ctx, 1) == TOKEN_COLON) {
+            switch (peek_token_kind_at(ctx, 2)) {
+                case TOKEN_LEFT_BRACE: left_tysp = compile_labeled_block(ctx); break;
+                case TOKEN_KEYWORD_LOOP: left_tysp = compile_loop_expr(ctx); break;
+                default: fail_expected(ctx, "`loop` or `{`");
+            }
+        } else {
+            fail_expected(ctx, "`:`");
         }
         break;
     case TOKEN_MINUS:
@@ -1954,30 +2263,30 @@ compile_expr(struct context *ctx, int min_binding_power) {
                     }
                 }
             } else if (left_tysp.type.kind == TY_INT) {
-                size_t true_label = ctx->local_label_count++;
-                size_t done_label = ctx->local_label_count++;
-                emit_local_forward_branch_if_nonzero(ctx, true_label);
+                size_t true_label_idx = ++ctx->last_local_label_idx;
+                size_t done_label_idx = ++ctx->last_local_label_idx;
+                emit_local_forward_branch_if_nonzero(ctx, true_label_idx);
                 right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
                 require_subtype_of_int(ctx, right_tysp);
                 if (right_tysp.type.kind == TY_NEVER
                 || (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value != 0)) {
                     // NOTE: RHS is statically true (or never); only emit the true case code
-                    emit_local_label(ctx, true_label);
+                    emit_local_label(ctx, true_label_idx);
                     emit_push_int(ctx, 1);
                 } else if (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value == 0) {
                     // NOTE: RHS is statically false; skip the RHS's branch_if_nonzero
                     emit_push_int(ctx, 0);
-                    emit_local_forward_branch(ctx, done_label);
-                    emit_local_label(ctx, true_label);
+                    emit_local_forward_branch(ctx, done_label_idx);
+                    emit_local_label(ctx, true_label_idx);
                     emit_push_int(ctx, 1);
-                    emit_local_label(ctx, done_label);
+                    emit_local_label(ctx, done_label_idx);
                 } else if (right_tysp.type.kind == TY_INT) {
-                    emit_local_forward_branch_if_nonzero(ctx, true_label);
+                    emit_local_forward_branch_if_nonzero(ctx, true_label_idx);
                     emit_push_int(ctx, 0);
-                    emit_local_forward_branch(ctx, done_label);
-                    emit_local_label(ctx, true_label);
+                    emit_local_forward_branch(ctx, done_label_idx);
+                    emit_local_label(ctx, true_label_idx);
                     emit_push_int(ctx, 1);
-                    emit_local_label(ctx, done_label);
+                    emit_local_label(ctx, done_label_idx);
                 } else {
                     assert(!"unreachable");
                 }
@@ -2023,30 +2332,30 @@ compile_expr(struct context *ctx, int min_binding_power) {
                     }
                 }
             } else if (left_tysp.type.kind == TY_INT) {
-                size_t false_label = ctx->local_label_count++;
-                size_t done_label = ctx->local_label_count++;
-                emit_local_forward_branch_if_zero(ctx, false_label);
+                size_t false_label_idx = ++ctx->last_local_label_idx;
+                size_t done_label_idx = ++ctx->last_local_label_idx;
+                emit_local_forward_branch_if_zero(ctx, false_label_idx);
                 right_tysp = compile_expr(ctx, BINARY_OP_RIGHT_BINDING_POWERS[op]);
                 require_subtype_of_int(ctx, right_tysp);
                 if (right_tysp.type.kind == TY_NEVER
                 || (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value == 0)) {
                     // NOTE: RHS is statically false (or never); only emit the false case code
-                    emit_local_label(ctx, false_label);
+                    emit_local_label(ctx, false_label_idx);
                     emit_push_int(ctx, 0);
                 } else if (right_tysp.type.kind == TY_CONST_INT && right_tysp.type.value != 0) {
                     // NOTE: RHS is statically true; skip the RHS's branch_if_zero
                     emit_push_int(ctx, 1);
-                    emit_local_forward_branch(ctx, done_label);
-                    emit_local_label(ctx, false_label);
+                    emit_local_forward_branch(ctx, done_label_idx);
+                    emit_local_label(ctx, false_label_idx);
                     emit_push_int(ctx, 0);
-                    emit_local_label(ctx, done_label);
+                    emit_local_label(ctx, done_label_idx);
                 } else if (right_tysp.type.kind == TY_INT) {
-                    emit_local_forward_branch_if_zero(ctx, false_label);
+                    emit_local_forward_branch_if_zero(ctx, false_label_idx);
                     emit_push_int(ctx, 1);
-                    emit_local_forward_branch(ctx, done_label);
-                    emit_local_label(ctx, false_label);
+                    emit_local_forward_branch(ctx, done_label_idx);
+                    emit_local_label(ctx, false_label_idx);
                     emit_push_int(ctx, 0);
-                    emit_local_label(ctx, done_label);
+                    emit_local_label(ctx, done_label_idx);
                 } else {
                     assert(!"unreachable");
                 }
@@ -2103,6 +2412,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
 static struct type_span
 compile_if_expr(struct context *ctx) {
     // EBNF: if_expr = "if" expr block_expr { "else" "if" expr block_expr } [ "else" block_expr ] ;
+    emit_comment(ctx, "begin if");
     struct token if_tok;
     take_token_expect_kind(ctx, &if_tok, TOKEN_KEYWORD_IF);
     struct type_span condition_tysp = compile_expr(ctx, 0);
@@ -2113,10 +2423,12 @@ compile_if_expr(struct context *ctx) {
     if (condition_tysp.type.kind == TY_CONST_INT) {
         bool was_dead_code = ctx->is_dead_code;
         ctx->is_dead_code = was_dead_code | (condition_tysp.type.value == 0);
+        emit_comment(ctx, "then");
         then_tysp = compile_block(ctx, true);
         ctx->is_dead_code = was_dead_code | (condition_tysp.type.value != 0);
         if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
             take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_ELSE);
+            emit_comment(ctx, "else");
             if (peek_token_kind(ctx) == TOKEN_KEYWORD_IF) {
                 else_tysp = compile_if_expr(ctx);
             } else {
@@ -2138,17 +2450,19 @@ compile_if_expr(struct context *ctx) {
         // TODO: warn about dead code
         ctx->is_dead_code = was_dead_code;
     } else {
-        size_t false_label = ctx->local_label_count++;
-        size_t done_label = ctx->local_label_count++;
-        emit_local_forward_branch_if_zero(ctx, false_label);
+        size_t false_label_idx = ++ctx->last_local_label_idx;
+        size_t done_label_idx = ++ctx->last_local_label_idx;
+        emit_local_forward_branch_if_zero(ctx, false_label_idx);
+        emit_comment(ctx, "then");
         struct type_span then_tysp = compile_block(ctx, true);
-        emit_local_forward_branch(ctx, done_label);
-        emit_local_label(ctx, false_label);
+        emit_local_forward_branch(ctx, done_label_idx);
+        emit_local_label(ctx, false_label_idx);
         if (peek_token_kind(ctx) == TOKEN_KEYWORD_ELSE) {
             if (then_tysp.type.kind == TY_CONST_INT) {
                 fail_type_anno_needed(ctx, then_tysp);
             }
             take_token_expect_kind(ctx, NULL, TOKEN_KEYWORD_ELSE);
+            emit_comment(ctx, "else");
             struct type_span else_tysp = { 0 };
             if (peek_token_kind(ctx) == TOKEN_KEYWORD_IF) {
                 else_tysp = compile_if_expr(ctx);
@@ -2169,11 +2483,12 @@ compile_if_expr(struct context *ctx) {
             result_tysp.type = (struct type){ .kind = TY_UNIT };
             result_tysp.span = (struct span){ .start = if_tok.loc, .end = then_tysp.span.end };
         }
-        emit_local_label(ctx, done_label);
+        emit_local_label(ctx, done_label_idx);
     }
     if (condition_tysp.type.kind == TY_NEVER) {
         result_tysp = condition_tysp;
     }
+    emit_comment(ctx, "end if");
     return result_tysp;
 }
 
@@ -2254,11 +2569,11 @@ compile_fn_call(struct context *ctx) {
         }
         fail_unknown_builtin(ctx, name_tok);
     }
+    emit_comment(ctx, "begin fn call");
     struct symbol_node *fn_sym_node = find_symbol_node(ctx, name_str);
     if (fn_sym_node == NULL) { fail_undefined_fn(ctx, name_tok); }
     struct type_span fn_tysp = fn_sym_node->sym.tysp;
     if (fn_tysp.type.kind != TY_FN) { fail_fn_call_non_fn(ctx, name_tok, fn_sym_node->sym.ident_tok, fn_tysp); }
-    emit_comment(ctx, "fn call prep");
     if (fn_tysp.type.stacked_args_size != 0) { emit_adjust_stack_pointer(ctx, -fn_tysp.type.stacked_args_size); }
     int regidx = 0;
     int stacked_arg_offset = 0;
@@ -2305,14 +2620,8 @@ compile_fn_call(struct context *ctx) {
     struct span fn_call_span = { .start = name_tok.loc, .end = token_end(ctx, right_paren_tok) };
     emit_fn_call(ctx, ctx->src + name_tok.loc.idx, name_tok.len);
     if (fn_tysp.type.stacked_args_size != 0) { emit_adjust_stack_pointer(ctx, fn_tysp.type.stacked_args_size); }
-    switch (return_type.kind) {
-        case TY_UNIT:
-        case TY_NEVER: break;
-        case TY_FN:
-        case TY_CONST_INT: assert(!"not implemented");
-        case TY_INT: emit_push(ctx, 0); break;
-    }
-    emit_comment(ctx, "fn call end");
+    push_return_type(ctx, return_type);
+    emit_comment(ctx, "end fn call");
     return (struct type_span){ .type = return_type, .span = fn_call_span };
 }
 

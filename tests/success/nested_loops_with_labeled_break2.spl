@@ -1,0 +1,16 @@
+const let foo = fn() -> u1 { 0:u1 }
+
+const let main = fn() {
+    let outer_result = 'outer: loop {
+        let inner_result = 'inner: loop {
+            if foo() {
+                break 'outer 1:i32
+            } else {
+                break 'inner 2:i32
+            }
+        }
+        if inner_result != 2 { __builtin_trap() }
+        break 3
+    }
+    if outer_result != 3 { __builtin_trap() }
+}

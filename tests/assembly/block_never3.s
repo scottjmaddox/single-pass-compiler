@@ -6,12 +6,13 @@ _main:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
+	; begin block
 	ldr	x11, =0x1
 	str	x11, [sp, #-16]!	; push
 	add	sp, sp, #16	; drop
-	brk	#0
-	; pop return value
-	mov	x0, #0	; clear
+	brk	#0	; __builtin_trap()
+	; end block
+	; pop fn return
 	; fn epilogue
 	ldp	x29, x30, [sp], #16
 	ret

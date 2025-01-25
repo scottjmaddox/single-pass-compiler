@@ -6,9 +6,11 @@ _v:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
+	; begin block
+	; end block
 	ldr	x11, =0x0
 	str	x11, [sp, #-16]!	; push
-	; pop return value
+	; pop fn return
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
 	ldp	x29, x30, [sp], #16
@@ -21,16 +23,19 @@ _main:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
-	; fn call prep
+	; begin block
+	; begin fn call
 	bl	_v	; fn call
+	; push fn return
 	str	x0, [sp, #-16]!	; push
-	; fn call end
+	; end fn call
 	; int to u1
 	ldr	x11, [sp], #16	; pop
 	cmp	x11, #0
 	cset	x11, ne
 	str	x11, [sp, #-16]!	; push
-	; pop return value
+	; end block
+	; pop fn return
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
 	ldp	x29, x30, [sp], #16

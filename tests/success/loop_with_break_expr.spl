@@ -1,0 +1,6 @@
+const let main = fn() {
+    let result = loop {
+        break 1:i32
+    }
+    if result != 1 { __builtin_trap() }
+}

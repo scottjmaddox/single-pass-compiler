@@ -14,6 +14,7 @@ _sum:
 	str	x5, [sp, #-16]!	; push
 	str	x6, [sp, #-16]!	; push
 	str	x7, [sp, #-16]!	; push
+	; begin block
 	ldr	x11, [x29, #-16]	; load
 	str	x11, [sp, #-16]!	; push
 	ldr	x11, [x29, #-32]	; load
@@ -65,10 +66,11 @@ _sum:
 	ldr	x11, [sp], #16	; pop
 	add	x11, x11, x12
 	str	x11, [sp, #-16]!	; push
-	; pop return value
+	; end block
+	; pop fn return
 	ldr	x0, [sp], #16	; pop
-	; fn epilogue
 	add	sp, sp, #128	; adjust stack pointer
+	; fn epilogue
 	ldp	x29, x30, [sp], #16
 	ret
 	.cfi_endproc
@@ -79,7 +81,8 @@ _main:
 	.cfi_startproc
 	stp	x29, x30, [sp, #-16]!
 	mov	x29, sp
-	; fn call prep
+	; begin block
+	; begin fn call
 	ldr	x11, =0x1
 	str	x11, [sp, #-16]!	; push
 	ldr	x0, [sp], #16	; pop
@@ -105,9 +108,11 @@ _main:
 	str	x11, [sp, #-16]!	; push
 	ldr	x7, [sp], #16	; pop
 	bl	_sum	; fn call
+	; push fn return
 	str	x0, [sp, #-16]!	; push
-	; fn call end
-	; pop return value
+	; end fn call
+	; end block
+	; pop fn return
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
 	ldp	x29, x30, [sp], #16
