@@ -1,5 +1,5 @@
 const let main = fn() {
     loop {
-        1
+        continue 'a;
     }
 }

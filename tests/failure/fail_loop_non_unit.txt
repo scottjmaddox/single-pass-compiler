@@ -1,0 +1,6 @@
+error: loop has non-unit result type `const int`:
+ --> tests/failure/fail_loop_non_unit.spl:3:9
+  |
+  |         1
+  |         ^
+  expected type `unit`.

@@ -1,0 +1,5 @@
+error: undefined label
+ --> tests/failure/continue_fail_undefined_label.spl:3:18
+  |
+  |         continue 'a;
+  |                  ^^

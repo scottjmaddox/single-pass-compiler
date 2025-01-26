@@ -1,0 +1,6 @@
+const let main = fn() {
+    {
+        let a:i32 = 0
+        return {}
+    }
+}

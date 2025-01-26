@@ -1951,14 +1951,11 @@ compile_break_expr(struct context *ctx) {
     int outer_cum_var_frame_offset = break_scope_node->next->scope.cum_var_frame_offset;
     int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
     if (stack_adjustment != 0) {
-        if (break_scope_node->scope.has_break_tysp) {
-            struct type break_type = break_scope_node->scope.break_tysp.type;
-            pop_block_type(ctx, break_type);
-            emit_adjust_stack_pointer(ctx, stack_adjustment);
-            push_block_type(ctx, break_type);
-        } else {
-            emit_adjust_stack_pointer(ctx, stack_adjustment);
-        }
+        assert(break_scope_node->scope.has_break_tysp);
+        struct type break_type = break_scope_node->scope.break_tysp.type;
+        pop_block_type(ctx, break_type);
+        emit_adjust_stack_pointer(ctx, stack_adjustment);
+        push_block_type(ctx, break_type);
     }
     emit_local_forward_branch(ctx, break_scope_node->scope.break_label_idx);
     emit_comment(ctx, "end break");
@@ -2076,6 +2073,8 @@ compile_block(struct context *ctx, bool create_scope) {
         take_token_expect_kind(ctx, NULL, TOKEN_RIGHT_BRACE);
         ctx->is_dead_code = was_dead_code;
     }
+    bool was_dead_code = ctx->is_dead_code;
+    ctx->is_dead_code = (result_tysp.type.kind == TY_NEVER);
     if (create_scope) {
         int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
         if (stack_adjustment != 0) {
@@ -2085,6 +2084,7 @@ compile_block(struct context *ctx, bool create_scope) {
         }
         pop_scope(ctx);
     }
+    ctx->is_dead_code = was_dead_code;
     emit_comment(ctx, "end block");
     return result_tysp;
 }
