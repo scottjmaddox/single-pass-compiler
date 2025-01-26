@@ -1220,17 +1220,6 @@ emit_clear_regidx(struct context *ctx, int regidx) {
 }
 
 static void
-emit_drop_type(struct context *ctx, enum TY ty) {
-    if (ctx->is_dead_code) { return; }
-    switch (ty) {
-        case TY_UNIT: case TY_NEVER: case TY_CONST_INT: break;
-        case TY_FN: assert(!"not implemented");
-        // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
-        case TY_INT: fprintf(ctx->output_file, "\tadd\tsp, sp, #16\t; drop\n");
-    }
-}
-
-static void
 emit_load_at_frame_offset(struct context *ctx, int frame_offset) {
     if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file, "\tldr\tx11, [x29, #%d]\t; load\n", frame_offset);
@@ -1488,6 +1477,16 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
          break;
     }
     return to.type;
+}
+
+static void
+discard_type(struct context *ctx, struct type type) {
+    switch (type.kind) {
+        case TY_UNIT: case TY_NEVER: case TY_CONST_INT: break;
+        case TY_FN: assert(!"not implemented");
+        // NOTE: using 16-byte slot, for now, to comply with stack pointer alignment restrictions
+        case TY_INT: emit_adjust_stack_pointer(ctx, 16);
+    }
 }
 
 static void
@@ -1818,7 +1817,7 @@ compile_let_expr(struct context *ctx) {
     if (expr_tysp.type.kind == TY_NEVER) {
         return_tysp.type = (struct type){ .kind = TY_NEVER };
     } else if (str_equals(token_str(ctx, name_tok), WILDCARD_STR)) {
-        emit_drop_type(ctx, expr_tysp.type.kind);
+        discard_type(ctx, expr_tysp.type);
     } else  {
         switch (expr_tysp.type.kind) {
         case TY_UNIT: case TY_NEVER: case TY_FN: assert(!"not implemented");
@@ -2054,13 +2053,13 @@ compile_block(struct context *ctx, bool create_scope) {
                 }
                 break;
             } else {
-                emit_drop_type(ctx, result_tysp.type.kind);
+                discard_type(ctx, result_tysp.type);
                 result_tysp = compile_expr(ctx, 0);
                 if (peek_token_kind(ctx) == TOKEN_SEMICOLON) {
                     struct token semicolon_tok;
                     take_token_expect_kind(ctx, &semicolon_tok, TOKEN_SEMICOLON);
                     if (result_tysp.type.kind != TY_NEVER) {
-                        emit_drop_type(ctx, result_tysp.type.kind);
+                        discard_type(ctx, result_tysp.type);
                         result_tysp = (struct type_span){
                             .type = { .kind = TY_UNIT }, .span =  token_span(ctx, semicolon_tok)};
                     }
@@ -2392,7 +2391,7 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 // TODO: warn about dead code
                 result_type = (struct type){ .kind = TY_NEVER };
             } else if (right_tysp.type.kind == TY_NEVER) {
-                emit_drop_type(ctx, left_tysp.type.kind);
+                discard_type(ctx, left_tysp.type);
                 result_type = (struct type){ .kind = TY_NEVER };
             } else if (left_tysp.type.kind == TY_CONST_INT && right_tysp.type.kind == TY_CONST_INT) {
                 result_type = eval_const_int_binary_op(ctx, op, left_tysp, right_tysp, result_span);

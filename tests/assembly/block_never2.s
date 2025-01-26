@@ -9,7 +9,7 @@ _main:
 	; begin block
 	ldr	x11, =0x1
 	str	x11, [sp, #-16]!	; push
-	add	sp, sp, #16	; drop
+	add	sp, sp, #16	; adjust stack pointer
 	brk	#0	; __builtin_trap()
 	; end block
 	; pop fn return
