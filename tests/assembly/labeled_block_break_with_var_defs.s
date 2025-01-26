@@ -27,7 +27,6 @@ _main:
 	b	1f
 	; end break
 	; end block
-	b	3f
 2:
 3:
 	; end if
@@ -49,7 +48,6 @@ _main:
 	b	1f
 	; end break
 	; end block
-	b	5f
 4:
 5:
 	; end if

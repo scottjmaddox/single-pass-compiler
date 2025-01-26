@@ -3,7 +3,7 @@ error: function call to non-function:
   |
   |     a()
   |     ^
-`a` has type `const int` and is defined here:
+`a` has type `i64` and is defined here:
  --> tests/failure/fn_call_non_fn.spl:2:9
   |
   |     let a = 1

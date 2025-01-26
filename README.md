@@ -28,7 +28,7 @@ fn_def_param = ident ":" type_expr ;
 type_expr = ident ;
 block = "{" { expr [ ";" ] } "}" ;
 expr = block | labeled_block | if_expr | let_expr | loop_expr | break_expr | continue_expr | return_expr
-     | "(" expr ")" | int_literal | fn_call | var_expr | op_expr ;
+     | "(" expr ")" | int_literal | fn_call | assign_expr | var_expr | op_expr ;
 labeled_block = label_ident ":" block ;
 if_expr = "if" expr block { "else" "if" expr block } [ "else" block ] ;
 let_expr = "let" ident [ ":" type_expr ] "=" expr ;
@@ -38,6 +38,7 @@ continue_expr = "continue" [ label_ident ] ;
 return_expr = "return" expr ;
 fn_call = ident "(" fn_args ")" ;
 fn_args = { expr "," } [ expr ] ;
+assign_expr = ident "=" expr ;
 var_expr = ident ;
 op_expr = prefix_op expr | expr infix_op expr ;
 
@@ -114,8 +115,17 @@ reserved_number =
 - [x] `extern fn` declarations; test calling into c
 - [x] early `return` with value
 - [x] `loop`, `continue`, and `break` with optional label and value
-- [ ] mutating assignment
-  - [ ] test loop continue
+- [x] disallow `let a: const int`, default to i64
+- [x] mutating assignment (`=`)
+- [ ] audit for missing dead code elim
+- [ ] `const if`: enforces that only one branch's code is emitted
+  - but both branches are parsed and type checked
+  - [ ] don't eliminate non-const `if` branches on const condition
+    - [ ] coerce const int conditions to smallest containing integer type
+- [ ] require `unit` or subtype of `i32` for `main` fn; if `unit`, return 0
+- [ ] mutating increment (`+=`) and decrement (`-=`) assignment
+- [ ] `while` loops
+- [ ] `for` loops
 - [ ] array type, array literals, array copy assignment, array indexing, array index assignment
 - [ ] slice type, slice literals, slice copy assignment, array slicing, array slice assignment
 - [ ] byte character literals, i.e. `b'a'`
@@ -139,9 +149,7 @@ reserved_number =
 - [ ] `const let` support for `const int`
 - [ ] `const let` function aliases
 - [ ] local `const let` support
-- [ ] `const <expr>`: enforces that the result is a compile-time constant
-- [ ] `const if`: enforces that only one branch's code is emitted
-  - but both branches are parsed and type checked
+- [ ] `const_block`: enforces that the result is a compile-time constant
 - [ ] `const for`: compile-time loop unrolling
 - [ ] `const fn`: function that can be evaluated at compile time?
   - or should it just be any function that expects or outputs a `const type`?
@@ -157,6 +165,7 @@ reserved_number =
 - [ ] safe integer downcasting, e.g. `(v:u64 & 0xF):u4`?
 - [ ] unsafe type casting?
 - [ ] warn on unused variable?
+- [ ] warn about dead code
 - [ ] compile-time optimization: intern idents?
   - using a trie?
   - benchmark before and after

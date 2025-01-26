@@ -1,0 +1,11 @@
+const let main = fn() {
+    let i = 0
+    loop {
+        i = i + 1
+        if i < 10 {
+            continue
+        }
+        break;
+    }
+    if i != 10 { __builtin_trap() }
+}

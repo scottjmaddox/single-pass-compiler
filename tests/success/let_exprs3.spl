@@ -54,7 +54,7 @@ const let main = fn() -> i64 {
 
     // Check that both tests passed (both returned 1).
     let combined = if prefix_result == 1 && infix_result == 1 {
-        0:i64
+        0
     } else {
         1
     }

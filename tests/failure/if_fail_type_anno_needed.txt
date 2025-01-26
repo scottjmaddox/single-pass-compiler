@@ -1,5 +1,0 @@
-error: type annotation needed:
- --> tests/failure/if_fail_type_anno_needed.spl:3:14
-  |
-  |     if v() { 1 } else { 0 }
-  |              ^

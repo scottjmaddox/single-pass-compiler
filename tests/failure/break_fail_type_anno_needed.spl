@@ -1,6 +1,0 @@
-const let v = fn() -> u1 { 0 }
-const let main = fn() {
-    'block: {
-        break 'block 0
-    }
-}

@@ -26,7 +26,7 @@ const let main = fn() -> i64 {
     let z = if x > y {
         x - y
     } else if x == y {
-        0:i64
+        0
     } else {
         y - x
     }
@@ -45,7 +45,7 @@ const let main = fn() -> i64 {
         // Check both the shifted w and z.
         // w should be 77, z should be 73. If both match, return 0; otherwise 1.
         if w == 77 && z == 73 {
-            0:i64
+            0
         } else {
             1
         }

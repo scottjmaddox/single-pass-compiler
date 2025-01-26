@@ -1,4 +1,4 @@
-error: if without else has non-unit result type `const int`:
+error: if without else has non-unit result type `i64`:
  --> tests/failure/if_without_else_non_unit.spl:3:16
   |
   |     if foo() { 1 }

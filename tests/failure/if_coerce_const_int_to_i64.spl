@@ -1,0 +1,7 @@
+const let main = fn() {
+    if 1:u1 {
+        1
+    } else {
+        2
+    }
+}

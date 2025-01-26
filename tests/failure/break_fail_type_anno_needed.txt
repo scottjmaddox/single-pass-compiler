@@ -1,5 +1,0 @@
-error: type annotation needed:
- --> tests/failure/break_fail_type_anno_needed.spl:4:22
-  |
-  |         break 'block 0
-  |                      ^
