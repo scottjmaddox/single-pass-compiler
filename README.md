@@ -141,7 +141,7 @@ reserved_number =
   - [x] test `fail_loop_non_unit`
   - [x] test `fail_unlabeled_break_outside_loop`
   - [x] test `fail_continue_outside_loop`
-  - [ ] check coverage report
+  - [x] check coverage report
 - [ ] rename `fail_fn_decl_with_def` to `fail_fn_decl_without_def` and fix error message
 - [ ] use `fp` for `x29` and `lr` for `x30`
 - [ ] mutating assignment

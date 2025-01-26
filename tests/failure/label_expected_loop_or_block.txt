@@ -1,0 +1,6 @@
+error: unexpected `}`:
+ --> tests/failure/label_expected_loop_or_block.spl:3:1
+  |
+  | }
+  | ^
+  expected `loop` or `{`.

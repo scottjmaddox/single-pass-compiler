@@ -2198,9 +2198,13 @@ compile_expr(struct context *ctx, int min_binding_power) {
             switch (peek_token_kind_at(ctx, 2)) {
                 case TOKEN_LEFT_BRACE: left_tysp = compile_labeled_block(ctx); break;
                 case TOKEN_KEYWORD_LOOP: left_tysp = compile_loop_expr(ctx); break;
-                default: fail_expected(ctx, "`loop` or `{`");
+                default:
+                    take_token_expect_kind(ctx, NULL, TOKEN_LABEL_IDENT);
+                    take_token_expect_kind(ctx, NULL, TOKEN_COLON);
+                    fail_expected(ctx, "`loop` or `{`");
             }
         } else {
+            take_token_expect_kind(ctx, NULL, TOKEN_LABEL_IDENT);
             fail_expected(ctx, "`:`");
         }
         break;

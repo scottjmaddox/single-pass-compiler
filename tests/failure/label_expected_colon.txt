@@ -1,0 +1,6 @@
+error: unexpected `}`:
+ --> tests/failure/label_expected_colon.spl:3:1
+  |
+  | }
+  | ^
+  expected `:`.
