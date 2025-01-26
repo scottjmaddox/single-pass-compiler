@@ -1,4 +1,4 @@
-error: function declaration with definition:
+error: function declaration without definition:
  --> tests/failure/fail_fn_decl_with_def.spl:1:11
   |
   | const let foo: fn(i32) -> i32

@@ -982,8 +982,8 @@ fail_conflicting_forward_decl_type(struct context *ctx, struct symbol new, struc
 }
 
 static void
-fail_fn_decl_with_def(struct context *ctx, struct symbol fn_decl) {
-    fprintf(stderr, "error: function declaration with definition:\n");
+fail_fn_decl_without_def(struct context *ctx, struct symbol fn_decl) {
+    fprintf(stderr, "error: function declaration without definition:\n");
     eprint_span(ctx, token_span(ctx, fn_decl.ident_tok));
     exit(EXIT_FAILURE);
 }
@@ -1558,7 +1558,7 @@ compile_program(struct context *ctx) {
     }
     for(struct symbol_node *sym_node = ctx->scope_stack->scope.symbol_list; sym_node != NULL; sym_node = sym_node->next) {
         if (sym_node->sym.is_forward_decl && !sym_node->sym.is_satisfied) {
-            fail_fn_decl_with_def(ctx, sym_node->sym);
+            fail_fn_decl_without_def(ctx, sym_node->sym);
         }
     }
     // NOTE: no need to pop_scope, since this is the top level
