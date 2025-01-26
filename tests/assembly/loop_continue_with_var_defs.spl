@@ -1,0 +1,7 @@
+const let main = fn() {
+    loop {
+        let a: i32 = 1
+        continue
+        let b: i32 = 1
+    }: never
+}

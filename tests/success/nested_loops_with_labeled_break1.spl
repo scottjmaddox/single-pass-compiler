@@ -1,12 +1,12 @@
 const let foo = fn() -> u1 { 1:u1 }
 
 const let main = fn() {
-    let outer_result = 'outer: loop {
-        let inner_result = 'inner: loop {
+    let outer_result: u3 = 'outer: loop {
+        let inner_result: u2 = 'inner: loop {
             if foo() {
-                break 'outer 1:i32
+                break 'outer 1:u3
             } else {
-                break 'inner 2:i32
+                break 'inner 2:u2
             }
         }
         if inner_result != 2 { __builtin_trap() }

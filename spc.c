@@ -795,7 +795,7 @@ lex(struct context *ctx) {
                 if (str_equals(token_str(ctx, tok), EXTERN_STR)) { tok.kind = TOKEN_KEYWORD_EXTERN; return tok; }
                 if (str_equals(token_str(ctx, tok), RETURN_STR)) { tok.kind = TOKEN_KEYWORD_RETURN; return tok; }
                 break;
-            case 7:
+            case 8:
                 if (str_equals(token_str(ctx, tok), CONTINUE_STR)) { tok.kind = TOKEN_KEYWORD_CONTINUE; return tok; }
                 break;
             }
@@ -1893,10 +1893,14 @@ compile_loop_expr(struct context *ctx) {
     struct type_span result_tysp = { .type = { .kind = TY_NEVER }, .span = loop_span };
     if (scope_node->scope.has_break_tysp) { result_tysp = scope_node->scope.break_tysp; }
     int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
+    bool was_dead_code = ctx->is_dead_code;
+    ctx->is_dead_code = (block_tysp.type.kind == TY_NEVER);
     if (stack_adjustment != 0) {
         // NOTE: block_tysp \subtype TY_UNIT, so no need to pop/push block type
         emit_adjust_stack_pointer(ctx, stack_adjustment);
     }
+    emit_local_backward_branch(ctx, continue_label_idx);
+    ctx->is_dead_code = was_dead_code;
     emit_local_label(ctx, break_label_idx);
     pop_scope(ctx);
     emit_comment(ctx, "end loop");
@@ -1966,16 +1970,22 @@ compile_continue_expr(struct context *ctx) {
         has_label = true;
         take_token_expect_kind(ctx, &label_tok, TOKEN_LABEL_IDENT);
     }
-    struct scope_node *scope_node = NULL;
+    struct scope_node *continue_scope_node = NULL;
     if (has_label) {
-        scope_node = find_labeled_scope_node(ctx, token_str(ctx, label_tok));
-        if (scope_node == NULL) { fail_undefined_label(ctx, label_tok); }
+        continue_scope_node = find_labeled_scope_node(ctx, token_str(ctx, label_tok));
+        if (continue_scope_node == NULL) { fail_undefined_label(ctx, label_tok); }
     } else {
-        scope_node = find_loop_scope_node(ctx);
-        if (scope_node == NULL) { fail_continue_outside_loop(ctx, continue_tok); }
+        continue_scope_node = find_loop_scope_node(ctx);
+        if (continue_scope_node == NULL) { fail_continue_outside_loop(ctx, continue_tok); }
     }
-    emit_comment(ctx, "continue");
-    emit_local_backward_branch(ctx, scope_node->scope.continue_label_idx);
+    emit_comment(ctx, "begin continue");
+    int outer_cum_var_frame_offset = continue_scope_node->next->scope.cum_var_frame_offset;
+    int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
+    if (stack_adjustment != 0) {
+        emit_adjust_stack_pointer(ctx, stack_adjustment);
+    }
+    emit_local_backward_branch(ctx, continue_scope_node->scope.continue_label_idx);
+    emit_comment(ctx, "end continue");
     return (struct type_span){ .type = { .kind = TY_NEVER }, .span = token_span(ctx, continue_tok) };
 }
 

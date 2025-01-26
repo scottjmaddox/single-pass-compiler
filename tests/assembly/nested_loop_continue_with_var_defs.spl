@@ -1,0 +1,11 @@
+const let main = fn() {
+    'outer: loop {
+        let outer1: i32 = 1
+        'inner: loop {
+            let inner1: i32 = 1
+            continue 'outer
+            let inner2: i32 = 2
+        }: never
+        let outer2: i32 = 2
+    }: never
+}

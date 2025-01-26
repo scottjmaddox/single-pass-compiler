@@ -125,9 +125,11 @@ reserved_number =
   - [x] test loop with break expr has expr's type and value
   - [x] test loop with `break;` has unit type
   - [x] fix variable definition slot inconsistencies
-  - [ ] adjust stack prior to `continue` branch
-  - [ ] test loop with var defs adjusts stack appropriately
-  - [ ] test nested loop with labeled break expr has expr's type and value
+  - [x] fix loop not looping
+  - [x] adjust stack prior to `continue` branch
+  - [x] test `continue` assembly adjusts stack appropriately
+  - [x] test loop with var defs adjusts stack appropriately
+  - [x] test nested loop with labeled break expr has expr's type and value
   - [ ] test labeled block with break expr has break type and value
   - [ ] test labeled block with `break 'label;` has unit type
   - [ ] test labeled block type mismatch between `break` type and block type
@@ -137,6 +139,7 @@ reserved_number =
   - [ ] test `fail_loop_non_unit`
   - [ ] test `fail_unlabeled_break_outside_loop`
   - [ ] test `fail_continue_outside_loop`
+  - [ ] check coverage report
 - [ ] rename `fail_fn_decl_with_def` to `fail_fn_decl_without_def` and fix error message
 - [ ] use `fp` for `x29` and `lr` for `x30`
 - [ ] mutating assignment

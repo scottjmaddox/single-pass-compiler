@@ -1,0 +1,5 @@
+const let main = fn() -> i32 {
+    'block: {
+        break 'block 0:i32
+    }
+}
