@@ -1851,17 +1851,21 @@ compile_labeled_block(struct context *ctx) {
         .cum_var_frame_offset = outer_cum_var_frame_offset,
         .has_label = true, .label_tok = label_tok, .break_label_idx = break_label_idx });
     struct type_span block_tysp = compile_block(ctx, false);
-    if (scope_node->scope.has_break_tysp) { require_subtype_coerce(ctx, block_tysp, scope_node->scope.break_tysp); }
+    struct type result_type = block_tysp.type;
+    if (scope_node->scope.has_break_tysp) {
+        result_type = require_subtype_coerce(ctx, block_tysp, scope_node->scope.break_tysp);
+    }
     int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
     if (stack_adjustment != 0) {
-        pop_block_type(ctx, block_tysp.type);
+        pop_block_type(ctx, result_type);
         emit_adjust_stack_pointer(ctx, stack_adjustment);
-        push_block_type(ctx, block_tysp.type);
+        push_block_type(ctx, result_type);
     }
     emit_local_label(ctx, break_label_idx);
     pop_scope(ctx);
     emit_comment(ctx, "end labeled block");
-    return block_tysp;
+    struct span labeled_block_span = { .start = label_tok.loc, .end = block_tysp.span.end };
+    return (struct type_span){ .type = result_type, .span = labeled_block_span };
 }
 
 static struct type_span
