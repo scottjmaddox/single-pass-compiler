@@ -1,3 +1,5 @@
 const let add: fn(a: i64, b: i64) -> i64
-const let main = fn() -> i64 { add(1, -1) }
+const let main = fn() {
+    if add(1, -1) != 0 { __builtin_trap() }
+}
 const let add = fn(a: i64, b: i64) -> i64 { a + b }

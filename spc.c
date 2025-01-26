@@ -230,6 +230,7 @@ static struct str EXTERN_STR = {.len = sizeof "extern" - 1, .ptr = "extern"};
 static struct str RETURN_STR = {.len = sizeof "return" - 1, .ptr = "return"};
 static struct str CONTINUE_STR = {.len = sizeof "continue" - 1, .ptr = "continue"};
 
+static struct str MAIN_STR = {.len = sizeof "main" - 1, .ptr = "main"};
 static struct str WILDCARD_STR = {.len = sizeof "_" - 1, .ptr = "_"};
 
 static struct str UNIT_STR = {.len = sizeof "unit" - 1, .ptr = "unit"};
@@ -959,6 +960,20 @@ fail_reserved_ident(struct context *ctx, struct token tok) {
     fprintf(stderr, "error: reserved identifier\n");
     eprint_span(ctx, token_span(ctx, tok));
     fprintf(stderr, "  note: identifiers starting with '__builtin' are reserved.\n");
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_main_params(struct context *ctx, struct token main_tok) {
+    fprintf(stderr, "error: `main` function must have no parameters\n");
+    eprint_span(ctx, token_span(ctx, main_tok));
+    exit(EXIT_FAILURE);
+}
+
+static void
+fail_main_return_type(struct context *ctx, struct token main_tok) {
+    fprintf(stderr, "error: `main` function must return `unit` or a subtype of `i32`\n");
+    eprint_span(ctx, token_span(ctx, main_tok));
     exit(EXIT_FAILURE);
 }
 
@@ -1752,6 +1767,19 @@ static void
 compile_fn_def(struct context *ctx, struct token *name_tok) {
     // EBNF: fn_def = "fn" "(" fn_def_params ")" "->" type_expr block ;
     struct fn_header fn_head = parse_fn_header(ctx, name_tok, true);
+    if (str_equals(token_str(ctx, fn_head.fn_sym.ident_tok), MAIN_STR)) {
+        assert(fn_head.fn_sym.tysp.type.kind == TY_FN);
+        assert(fn_head.fn_sym.tysp.type.param_type_list != NULL);
+        if (fn_head.fn_sym.tysp.type.param_type_list->next != NULL) {
+            fail_main_params(ctx, fn_head.fn_sym.ident_tok);
+        }
+        struct type return_type = fn_head.fn_sym.tysp.type.param_type_list->tysp.type;
+        bool is_valid_return_type = return_type.kind == TY_UNIT
+            || is_subtype(return_type, (struct type){ .kind = TY_INT, .sgnd = true, .bits = 32 });
+        if (!is_valid_return_type) {
+            fail_main_return_type(ctx, fn_head.fn_sym.ident_tok);
+        }
+    }
     struct symbol_node *existing_fn_sym_node = find_symbol_node(ctx, token_str(ctx, fn_head.fn_sym.ident_tok));
     if (existing_fn_sym_node != NULL) {
         if (!existing_fn_sym_node->sym.is_forward_decl) {

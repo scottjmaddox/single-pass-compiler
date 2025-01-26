@@ -117,7 +117,11 @@ reserved_number =
 - [x] `loop`, `continue`, and `break` with optional label and value
 - [x] disallow `let a: const int`, default to i64
 - [x] mutating assignment (`=`)
-- [ ] require `unit` or subtype of `i32` for `main` fn; if `unit`, return 0
+- [ ] pass down expected type
+  - to reduce the need for inline type annotations
+  - to emit type coercions inside of blocks, rather than after blocks
+  - [ ] only default integers to i64 in `compile_let_expr` and `compile_if_expr`
+    - and only if no expected type
 - [ ] mutating increment (`+=`) and decrement (`-=`) assignment
 - [ ] `while` loops
 - [ ] `for` loops
@@ -129,6 +133,7 @@ reserved_number =
 - [ ] wrapping arithmatic operators: `*%`, `+%`, `-%`?
 - [ ] saturating arithmatic operators: `*|`, `+|`, `-|`?
 - [ ] require explicit overflow/underflow handling for normal operators?
+- [ ] support arithmetic on `u32` and `i32`; change integer default to `i32`
 - [ ] function types and indirect calls
 - [ ] basic `match` expressions
 - [ ] reserve builtin type idents, e.g. `unit`, `never`, `u[0-9]+`, `i[0-9]+`

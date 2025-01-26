@@ -48,20 +48,20 @@ const let test_infix_ops = fn() -> i64 {
 }
 
 // The main function combines the tests above and uses a nested block to shadow a variable.
-const let main = fn() -> i64 {
+const let main = fn() -> i32 {
     let prefix_result = test_prefix_ops()
     let infix_result = test_infix_ops()
 
     // Check that both tests passed (both returned 1).
     let combined = if prefix_result == 1 && infix_result == 1 {
-        0
+        0:u1
     } else {
         1
     }
 
     {
         // Shadow the name `combined` in this inner block.
-        let combined = combined + 0  // no-op; just demonstrating shadowing
+        let combined:i32 = combined  // no-op; just demonstrating shadowing
         combined
     }
 }

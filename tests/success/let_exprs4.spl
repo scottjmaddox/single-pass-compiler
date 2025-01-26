@@ -13,7 +13,7 @@ const let helper = fn() -> i64 {
 
 // The main function makes use of helper(), octal and binary literals,
 // nested blocks, arithmetic, and logical operators.
-const let main = fn() -> i64 {
+const let main = fn() -> i32 {
     // x = 10 (returned by helper)
     let x = helper()
 
@@ -45,7 +45,7 @@ const let main = fn() -> i64 {
         // Check both the shifted w and z.
         // w should be 77, z should be 73. If both match, return 0; otherwise 1.
         if w == 77 && z == 73 {
-            0
+            0:i32
         } else {
             1
         }

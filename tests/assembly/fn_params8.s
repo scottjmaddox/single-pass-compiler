@@ -82,6 +82,7 @@ _main:
 	stp	fp, lr, [sp, #-16]!
 	mov	fp, sp
 	; begin block
+	; begin if
 	; begin fn call
 	ldr	x11, =0x1
 	str	x11, [sp, #-16]!	; push
@@ -111,9 +112,25 @@ _main:
 	; push fn return
 	str	x0, [sp, #-16]!	; push
 	; end fn call
+	ldr	x11, =0x0
+	str	x11, [sp, #-16]!	; push
+	; binary op
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	cmp	x11, x12
+	cset	x11, ne
+	str	x11, [sp, #-16]!	; push
+	ldr	x11, [sp], #16	; pop
+	cbz	x11, 1f
+	; then
+	; begin block
+	brk	#0	; __builtin_trap()
+	; end block
+1:
+	; end if
 	; end block
 	; pop fn return
-	ldr	x0, [sp], #16	; pop
+	mov	x0, #0	; clear
 	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc

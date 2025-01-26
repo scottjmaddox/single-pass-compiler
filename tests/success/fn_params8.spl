@@ -4,4 +4,6 @@ const let sum = fn(
     p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8
 }
 
-const let main = fn() -> i64 { sum(1, -1, 2, -2, 3, -3, 4, -4) }
+const let main = fn() {
+    if sum(1, -1, 2, -2, 3, -3, 4, -4) != 0 { __builtin_trap() }
+}

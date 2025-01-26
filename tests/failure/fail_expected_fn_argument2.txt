@@ -1,8 +1,8 @@
 error: unexpected `)`:
- --> tests/failure/fail_expected_fn_argument2.spl:3:37
+ --> tests/failure/fail_expected_fn_argument2.spl:3:30
   |
-  | const let main = fn() -> i64 { sub(1) }
-  |                                     ^
+  | const let main = fn() { sub(1); }
+  |                              ^
   expected a function argument with type `i64` from:
  --> tests/failure/fail_expected_fn_argument2.spl:1:31
   |

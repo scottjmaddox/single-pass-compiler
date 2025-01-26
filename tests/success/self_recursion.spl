@@ -6,4 +6,6 @@ const let recursive = fn(v: i64) -> i64 {
     }
 }
 
-const let main = fn() -> i64 { recursive(5) }
+const let main = fn() {
+    if recursive(5) != 0 { __builtin_trap() }
+}

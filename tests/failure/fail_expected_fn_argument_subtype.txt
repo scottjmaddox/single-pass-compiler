@@ -1,8 +1,8 @@
 error: expected type `u64` from:
- --> tests/failure/fail_expected_fn_argument_subtype.spl:3:36
+ --> tests/failure/fail_expected_fn_argument_subtype.spl:3:29
   |
-  | const let main = fn() -> i64 { sub(1:u64, 1:u64) }
-  |                                    ^^^^^
+  | const let main = fn() { sub(1:u64, 1:u64); }
+  |                             ^^^^^
   to be a subtype of type `i64` from:
  --> tests/failure/fail_expected_fn_argument_subtype.spl:1:23
   |

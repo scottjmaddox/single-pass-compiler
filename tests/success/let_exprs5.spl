@@ -154,7 +154,7 @@ const let test_multi_shadow = fn() -> i64 {
 // MAIN - orchestrates all tests. If any test fails,
 //        it calls __builtin_trap().
 // ----------------------------------------------------
-const let main = fn() -> i64 {
+const let main = fn() -> i32 {
     // 1) test_prefix_ops
     if test_prefix_ops() != 1 {
         __builtin_trap()

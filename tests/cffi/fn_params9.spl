@@ -2,4 +2,6 @@ const let sum: extern fn(
     p1: i64, p2: i64, p3: i64, p4: i64, p5: i64, p6: i64, p7: i64, p8: i64, p9: i64
 ) -> i64
 
-const let main = fn() -> i64 { sum(1, 1, 1, 1, 1, 1, 1, 1, -8) }
+const let main = fn() {
+    if sum(1, 1, 1, 1, 1, 1, 1, 1, -8) != 0 { __builtin_trap() }
+}

@@ -10,9 +10,9 @@ _main:
 	; begin if
 	; then
 	; begin block
-	; end block
 	ldr	x11, =0x2
 	str	x11, [sp, #-16]!	; push
+	; end block
 	; end if
 	; end block
 	; pop fn return
