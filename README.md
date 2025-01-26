@@ -130,11 +130,11 @@ reserved_number =
   - [x] test `continue` assembly adjusts stack appropriately
   - [x] test loop with var defs adjusts stack appropriately
   - [x] test nested loop with labeled break expr has expr's type and value
-  - [ ] test labeled block with break expr has break type and value
-  - [ ] test labeled block with `break 'label;` has unit type
+  - [x] test labeled block with break expr has break type and value
+  - [x] test labeled block with `break 'label;` has unit type
+  - [x] test labeled block with var defs after `break` does not adjust stack
+  - [x] test labeled block with var defs before and after `break` adjusts stack appropriately
   - [ ] test labeled block type mismatch between `break` type and block type
-  - [ ] test labeled block with var defs before and after `break` adjusts stack appropriately
-  - [ ] test labeled block with var defs after `break` does not adjust stack
   - [ ] test `fail_undefined_label`
   - [ ] test `fail_loop_non_unit`
   - [ ] test `fail_unlabeled_break_outside_loop`

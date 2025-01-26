@@ -1,0 +1,5 @@
+const let main = fn() {
+    'block: {
+        break 'block;
+    }
+}

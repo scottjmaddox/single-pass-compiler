@@ -1,0 +1,7 @@
+const let main = fn() {
+    'block: {
+        let a: i32 = 1
+        break 'block;
+        let b: i32 = 1
+    }
+}

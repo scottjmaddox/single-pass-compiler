@@ -1,0 +1,9 @@
+const let main = fn() {
+    'block: {
+        let a: i32 = 1
+        if a { break 'block; }
+        let b: i32 = 1
+        if b { break 'block; }
+        let c: i32 = 1
+    }
+}

@@ -1855,12 +1855,15 @@ compile_labeled_block(struct context *ctx) {
     if (scope_node->scope.has_break_tysp) {
         result_type = require_subtype_coerce(ctx, block_tysp, scope_node->scope.break_tysp);
     }
+    bool was_dead_code = ctx->is_dead_code;
+    ctx->is_dead_code = (block_tysp.type.kind == TY_NEVER);
     int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
     if (stack_adjustment != 0) {
         pop_block_type(ctx, result_type);
         emit_adjust_stack_pointer(ctx, stack_adjustment);
         push_block_type(ctx, result_type);
     }
+    ctx->is_dead_code = was_dead_code;
     emit_local_label(ctx, break_label_idx);
     pop_scope(ctx);
     emit_comment(ctx, "end labeled block");
