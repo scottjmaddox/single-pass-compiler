@@ -117,11 +117,6 @@ reserved_number =
 - [x] `loop`, `continue`, and `break` with optional label and value
 - [x] disallow `let a: const int`, default to i64
 - [x] mutating assignment (`=`)
-- [ ] audit for missing dead code elim
-- [ ] `const if`: enforces that only one branch's code is emitted
-  - but both branches are parsed and type checked
-  - [ ] don't eliminate non-const `if` branches on const condition
-    - [ ] coerce const int conditions to smallest containing integer type
 - [ ] require `unit` or subtype of `i32` for `main` fn; if `unit`, return 0
 - [ ] mutating increment (`+=`) and decrement (`-=`) assignment
 - [ ] `while` loops
@@ -146,7 +141,9 @@ reserved_number =
 - [ ] support multi-line span error messages
 - [ ] `let name: type` forward variable declarations
 - [ ] nullable pointer types (`?*type`), with coersion
-- [ ] `const let` support for `const int`
+- [ ] `const let` support for explicit constant integers; cannot be mutated
+- [ ] `const if`: enforces that only one branch's code is emitted
+  - but both branches are parsed and type checked
 - [ ] `const let` function aliases
 - [ ] local `const let` support
 - [ ] `const_block`: enforces that the result is a compile-time constant

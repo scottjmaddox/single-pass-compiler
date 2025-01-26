@@ -1,5 +1,5 @@
 	.section	__TEXT,__text,regular,pure_instructions
-	; fn prologue
+	; begin fn
 	.globl	_v
 	.p2align	2
 _v:
@@ -12,11 +12,11 @@ _v:
 	str	x11, [sp, #-16]!	; push
 	; pop fn return
 	ldr	x0, [sp], #16	; pop
-	; fn epilogue
 	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
-	; fn prologue
+	; end fn
+	; begin fn
 	.globl	_main
 	.p2align	2
 _main:
@@ -32,9 +32,9 @@ _main:
 	; end block
 	; pop fn return
 	ldr	x0, [sp], #16	; pop
-	; fn epilogue
 	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
+	; end fn
 
 .subsections_via_symbols

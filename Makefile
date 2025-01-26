@@ -36,12 +36,18 @@ test-assembly: spc $(TEST_ASSEMBLY_SPL_FILES)
 	@echo "Running assembly tests..."
 	@FAIL=0; \
 	for SPL in $(TEST_ASSEMBLY_SPL_FILES); do \
-		TMP_OUT=$$(mktemp); \
+		TMP_OUT="$$(mktemp)"; \
 		PROF_OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.profraw/')"; \
 		OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.s/')"; \
-		LLVM_PROFILE_FILE="$$PROF_OUT.profraw" ./spc -o $$TMP_OUT "$$SPL"; \
+		LLVM_PROFILE_FILE="$$PROF_OUT.profraw" ./spc -o "$$TMP_OUT" "$$SPL"; \
 		if cmp -s "$$TMP_OUT" "$$OUT"; then \
 			rm "$$TMP_OUT"; \
+			EXE_OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$//')"; \
+			clang -O0 --debug -o "$$EXE_OUT" "$$OUT"; \
+			if [ $$? -ne 0 ]; then \
+				echo "FAIL: compiling assembly to executable"; \
+				FAIL=1; \
+			fi; \
 		else \
 			echo "FAIL: writing expected output to '$$OUT'"; \
 			mv "$$TMP_OUT" "$$OUT"; \
@@ -82,7 +88,7 @@ test-failure: spc $(TEST_FAILURE_SPL_FILES)
 	@echo "Running failure tests..."
 	@FAIL=0; \
 	for SPL in $(TEST_FAILURE_SPL_FILES); do \
-		TMP_OUT=$$(mktemp); \
+		TMP_OUT="$$(mktemp)"; \
 		PROF_OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.profraw/')"; \
 		OUT="$$(echo "$$SPL" | sed 's/\.[^.]*$$/.txt/')"; \
 		LLVM_PROFILE_FILE="$$PROF_OUT.profraw" ./spc -o $$(mktemp) "$$SPL" >"$$TMP_OUT" 2>&1; \
