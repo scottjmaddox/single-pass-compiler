@@ -1498,7 +1498,8 @@ require_subtype_coerce(struct context *ctx, struct type_span from, struct type_s
     if (type_equals(from.type, to.type)) { return to.type; }
     require_subtype(ctx, from, to);
     switch (from.type.kind) {
-    case TY_UNIT: case TY_NEVER: break;
+    case TY_UNIT: break;
+    case TY_NEVER: return from.type;
     case TY_FN: assert(!"not implemented");
     case TY_CONST_INT:
         if (to.type.kind == TY_INT) { emit_push_int(ctx, (uint64_t)from.type.value); }
@@ -1825,8 +1826,8 @@ compile_fn_def(struct context *ctx, struct token *name_tok) {
     }
     struct type_span block_return_tysp = compile_block(ctx, false);
     bool was_dead_code = ctx->is_dead_code; ctx->is_dead_code |= (block_return_tysp.type.kind == TY_NEVER);
-    struct type return_type = require_subtype_coerce(ctx, block_return_tysp, ctx->declared_return_tysp);
-    pop_return_type(ctx, return_type);
+    require_subtype_coerce(ctx, block_return_tysp, ctx->declared_return_tysp);
+    pop_return_type(ctx, ctx->declared_return_tysp.type);
     if (scope_node->scope.cum_var_frame_offset != 0) {
         emit_adjust_stack_pointer(ctx, -scope_node->scope.cum_var_frame_offset);
     }
@@ -1906,21 +1907,23 @@ compile_labeled_block(struct context *ctx) {
     struct type_span block_tysp = compile_block(ctx, false);
     bool was_dead_code = ctx->is_dead_code;
     ctx->is_dead_code = was_dead_code | (block_tysp.type.kind == TY_NEVER);
+    struct type result_type = block_tysp.type;
     if (scope_node->scope.has_break_tysp) {
-        block_tysp.type = require_subtype_coerce(ctx, block_tysp, scope_node->scope.break_tysp);
+        require_subtype_coerce(ctx, block_tysp, scope_node->scope.break_tysp);
+        result_type = scope_node->scope.break_tysp.type;
     }
     int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
     if (stack_adjustment != 0) {
-        pop_block_type(ctx, block_tysp.type);
+        pop_block_type(ctx, result_type);
         emit_adjust_stack_pointer(ctx, stack_adjustment);
-        push_block_type(ctx, block_tysp.type);
+        push_block_type(ctx, result_type);
     }
     ctx->is_dead_code = was_dead_code;
     emit_local_label(ctx, break_label_idx);
     pop_scope(ctx);
     emit_comment(ctx, "end labeled block");
     struct span labeled_block_span = { .start = label_tok.loc, .end = block_tysp.span.end };
-    return (struct type_span){ .type = block_tysp.type, .span = labeled_block_span };
+    return (struct type_span){ .type = result_type, .span = labeled_block_span };
 }
 
 static struct type_span
@@ -1994,12 +1997,13 @@ compile_break_expr(struct context *ctx) {
     bool was_dead_code = ctx->is_dead_code;
     ctx->is_dead_code = was_dead_code | (expr_tysp.type.kind == TY_NEVER);
     if (break_scope_node->scope.has_break_tysp) {
-        expr_tysp.type = require_subtype_coerce(ctx, expr_tysp, break_scope_node->scope.break_tysp);
-    } else if (expr_tysp.type.kind == TY_CONST_INT) {
-        expr_tysp.type = coerce_const_int_to_i64(ctx, expr_tysp);
+        require_subtype_coerce(ctx, expr_tysp, break_scope_node->scope.break_tysp);
+    } else {
+        if (expr_tysp.type.kind == TY_CONST_INT) { expr_tysp.type = coerce_const_int_to_i64(ctx, expr_tysp); }
+        break_scope_node->scope.has_break_tysp = true;
+        break_scope_node->scope.break_tysp = expr_tysp;
     }
-    break_scope_node->scope.has_break_tysp = true;
-    break_scope_node->scope.break_tysp = expr_tysp;
+    assert(break_scope_node->scope.has_break_tysp);
     assert(break_scope_node->next != NULL);
     int outer_cum_var_frame_offset = break_scope_node->next->scope.cum_var_frame_offset;
     int stack_adjustment = outer_cum_var_frame_offset - ctx->scope_stack->scope.cum_var_frame_offset;
@@ -2051,11 +2055,11 @@ compile_return_expr(struct context *ctx) {
     emit_comment(ctx, "begin return");
     struct token return_tok;
     take_token_expect_kind(ctx, &return_tok, TOKEN_KEYWORD_RETURN);
-    struct type_span return_tysp = compile_expr(ctx, 0);
+    struct type_span expr_tysp = compile_expr(ctx, 0);
     bool was_dead_code = ctx->is_dead_code;
-    ctx->is_dead_code = was_dead_code | (return_tysp.type.kind == TY_NEVER);
-    struct type return_type = require_subtype_coerce(ctx, return_tysp, ctx->declared_return_tysp);
-    pop_return_type(ctx, return_type);
+    ctx->is_dead_code = was_dead_code | (expr_tysp.type.kind == TY_NEVER);
+    require_subtype_coerce(ctx, expr_tysp, ctx->declared_return_tysp);
+    pop_return_type(ctx, ctx->declared_return_tysp.type);
     if (ctx->scope_stack->scope.cum_var_frame_offset != 0) {
         emit_adjust_stack_pointer(ctx, -ctx->scope_stack->scope.cum_var_frame_offset);
     }
@@ -2075,7 +2079,8 @@ compile_var_expr(struct context *ctx) {
     if (sym_node == NULL) { fail_undefined_var(ctx, name_tok); }
     struct type result_type = sym_node->sym.tysp.type;
     switch (result_type.kind) {
-    case TY_UNIT: case TY_NEVER: case TY_FN: assert(!"not implemented");
+    case TY_UNIT: case TY_NEVER: break;
+    case TY_FN: assert(!"not implemented");
     case TY_CONST_INT: assert(!"unreachable");
     case TY_INT: emit_load_at_frame_offset(ctx, sym_node->sym.var_frame_offset); break;
     }
@@ -2438,7 +2443,6 @@ compile_expr(struct context *ctx, int min_binding_power) {
                 result_type = eval_const_int_binary_op(ctx, op, left_tysp, right_tysp, result_span);
             } else {
                 bool swap = false;
-                // TODO: do we need to drop anything if one or both are TY_NEVER?
                 if (left_tysp.type.kind == TY_CONST_INT) {
                     left_tysp.type = require_subtype_coerce(ctx, left_tysp, right_tysp);
                     swap = true;
@@ -2471,9 +2475,10 @@ compile_assign_expr(struct context *ctx) {
     if (sym_node == NULL) { fail_undefined_var(ctx, name_tok); }
     struct type_span expr_tysp = compile_expr(ctx, 0);
     bool was_dead_code = ctx->is_dead_code; ctx->is_dead_code |= (expr_tysp.type.kind == TY_NEVER);
-    expr_tysp.type = require_subtype_coerce(ctx, expr_tysp, sym_node->sym.tysp);
-    switch (expr_tysp.type.kind) {
-    case TY_UNIT: case TY_NEVER: case TY_FN: assert(!"not implemented");
+    require_subtype_coerce(ctx, expr_tysp, sym_node->sym.tysp);
+    switch (sym_node->sym.tysp.type.kind) {
+    case TY_UNIT: case TY_NEVER: break;
+    case TY_FN: assert(!"not implemented");
     case TY_CONST_INT: assert(!"unreachable");
     case TY_INT: emit_store_at_frame_offset(ctx, sym_node->sym.var_frame_offset); break;
     }
@@ -2660,12 +2665,11 @@ compile_fn_call(struct context *ctx) {
         struct type_span arg_tysp = compile_expr(ctx, 0);
         is_never |= (arg_tysp.type.kind == TY_NEVER);
         ctx->is_dead_code |= (arg_tysp.type.kind == TY_NEVER);
-        struct type coerced_arg_type = require_subtype_coerce(ctx, arg_tysp, type_node->tysp);
-        switch (coerced_arg_type.kind) {
-        case TY_UNIT:
-        case TY_NEVER: break;
+        arg_tysp.type = require_subtype_coerce(ctx, arg_tysp, type_node->tysp);
+        switch (arg_tysp.type.kind) {
+        case TY_UNIT: case TY_NEVER: break;
         case TY_FN: assert(!"not implemented");
-        case TY_CONST_INT: assert(!"not implemented");
+        case TY_CONST_INT: assert(!"unreachable");
         case TY_INT:
             if (regidx < 8) { // NOTE: the first 8 parameters are passed in registers
                 emit_pop(ctx, regidx);
