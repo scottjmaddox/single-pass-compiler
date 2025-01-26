@@ -1,4 +1,4 @@
-.PHONY: all clean test test-failure test-success
+.PHONY: all clean test test-assembly test-cffi test-failure test-success
 
 TEST_ASSEMBLY_SPL_FILES := $(wildcard tests/assembly/*.spl)
 TEST_CFFI_SPL_FILES := $(wildcard tests/cffi/*.spl)
@@ -32,7 +32,7 @@ test: test-assembly test-cffi test-failure test-success
 	llvm-cov show ./spc -instr-profile=tests.profdata -format=html -output-dir=coverage --show-branches=count
 
 
-test-assembly:
+test-assembly: spc $(TEST_ASSEMBLY_SPL_FILES)
 	@echo "Running assembly tests..."
 	@FAIL=0; \
 	for SPL in $(TEST_ASSEMBLY_SPL_FILES); do \
@@ -56,7 +56,7 @@ test-assembly:
 	fi
 
 
-test-cffi: $(TEST_CFFI_EXECUTABLES)
+test-cffi: spc $(TEST_CFFI_EXECUTABLES)
 	@for test in $(TEST_CFFI_EXECUTABLES); do \
 		echo "Running $$test..."; \
 		./$$test; \
@@ -78,7 +78,7 @@ tests/cffi/%.s: tests/cffi/%.spl spc
 tests/cffi/%.spl:
 
 
-test-failure:
+test-failure: spc $(TEST_FAILURE_SPL_FILES)
 	@echo "Running failure tests..."
 	@FAIL=0; \
 	for SPL in $(TEST_FAILURE_SPL_FILES); do \
@@ -104,7 +104,7 @@ test-failure:
 tests/failure/%.spl:
 
 
-test-success: $(TEST_SUCCESS_EXECUTABLES)
+test-success: spc $(TEST_SUCCESS_EXECUTABLES)
 	@for test in $(TEST_SUCCESS_EXECUTABLES); do \
 		echo "Running $$test..."; \
 		./$$test; \
