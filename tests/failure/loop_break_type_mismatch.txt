@@ -1,0 +1,13 @@
+error: expected type `u1` from:
+ --> tests/failure/loop_break_type_mismatch.spl:5:23
+  |
+  |         if !a { break 1:u1 }
+  |                       ^^^^
+  to be a subtype of type `u0` from:
+ --> tests/failure/loop_break_type_mismatch.spl:4:22
+  |
+  |         if a { break 0:u0 }
+  |                      ^^^^
+  note: type A is a subtype of type B if and only if:
+  - every value that A can represent is representable by B, and
+  - type A supports all the operations that type B supports

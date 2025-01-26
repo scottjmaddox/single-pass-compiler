@@ -1,0 +1,7 @@
+const let main = fn() -> u0 {
+    loop {
+        let a = 1
+        if a { break 0:u0 }
+        if !a { break 1:u1 }
+    }
+}

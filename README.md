@@ -134,11 +134,13 @@ reserved_number =
   - [x] test labeled block with `break 'label;` has unit type
   - [x] test labeled block with var defs after `break` does not adjust stack
   - [x] test labeled block with var defs before and after `break` adjusts stack appropriately
-  - [ ] test labeled block type mismatch between `break` type and block type
-  - [ ] test `fail_undefined_label`
-  - [ ] test `fail_loop_non_unit`
-  - [ ] test `fail_unlabeled_break_outside_loop`
-  - [ ] test `fail_continue_outside_loop`
+  - [x] test loop break type mismatch
+  - [x] test labeled block break type mismatch
+  - [x] test labeled block type mismatch between `break` type and block type
+  - [x] test `fail_undefined_label`
+  - [x] test `fail_loop_non_unit`
+  - [x] test `fail_unlabeled_break_outside_loop`
+  - [x] test `fail_continue_outside_loop`
   - [ ] check coverage report
 - [ ] rename `fail_fn_decl_with_def` to `fail_fn_decl_without_def` and fix error message
 - [ ] use `fp` for `x29` and `lr` for `x30`

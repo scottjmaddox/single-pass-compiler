@@ -1104,7 +1104,7 @@ fail_type_anno_needed(struct context *ctx, struct type_span tysp) {
 
 static void
 fail_loop_non_unit(struct context *ctx, struct type_span loop) {
-    fprintf(stderr, "error: loop has non-unit type `");
+    fprintf(stderr, "error: loop has non-unit result type `");
     eprint_type(loop.type);
     fprintf(stderr, "`:\n");
     eprint_span(ctx, loop.span);
@@ -1114,7 +1114,7 @@ fail_loop_non_unit(struct context *ctx, struct type_span loop) {
 
 static void
 fail_if_without_else_non_unit(struct context *ctx, struct type_span then) {
-    fprintf(stderr, "error: if without else has non-unit type `");
+    fprintf(stderr, "error: if without else has non-unit result type `");
     eprint_type(then.type);
     fprintf(stderr, "`:\n");
     eprint_span(ctx, then.span);

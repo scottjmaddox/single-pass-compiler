@@ -1,0 +1,5 @@
+error: continue outside of a loop:
+ --> tests/failure/fail_continue_outside_loop.spl:2:5
+  |
+  |     continue;
+  |     ^^^^^^^^

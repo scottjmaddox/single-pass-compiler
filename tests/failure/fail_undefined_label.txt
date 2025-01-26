@@ -1,0 +1,5 @@
+error: undefined label
+ --> tests/failure/fail_undefined_label.spl:3:15
+  |
+  |         break 'a;
+  |               ^^

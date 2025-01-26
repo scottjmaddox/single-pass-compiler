@@ -1,0 +1,7 @@
+const let main = fn() -> u0 {
+    'block: {
+        let a = 1
+        if a { break 'block 0:u0 }
+        if !a { break 'block 1:u1 }
+    }
+}
