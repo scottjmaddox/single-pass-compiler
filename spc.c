@@ -298,7 +298,7 @@ struct symbol {
     struct type_span tysp;
     bool is_forward_decl;
     bool is_satisfied; // true if the forward declaration has been satisfied
-    int var_frame_offset; // variable offset from the frame pointer (x29)
+    int var_frame_offset; // variable offset from the frame pointer (fp)
 };
 
 struct symbol_node {
@@ -314,7 +314,7 @@ struct fn_header {
 
 struct scope {
     struct symbol_node *symbol_list;
-    int cum_var_frame_offset; // cumulative variable offset from the frame pointer (x29)
+    int cum_var_frame_offset; // cumulative variable offset from the frame pointer (fp)
     bool is_loop; // true if this a loop scope
     bool has_label; // true if this scope has a label
     bool has_break_tysp; // true if this scope has a break expression type
@@ -1222,7 +1222,7 @@ emit_clear_regidx(struct context *ctx, int regidx) {
 static void
 emit_load_at_frame_offset(struct context *ctx, int frame_offset) {
     if (ctx->is_dead_code) { return; }
-    fprintf(ctx->output_file, "\tldr\tx11, [x29, #%d]\t; load\n", frame_offset);
+    fprintf(ctx->output_file, "\tldr\tx11, [fp, #%d]\t; load\n", frame_offset);
     emit_push(ctx, 11);
 }
 
@@ -1235,8 +1235,8 @@ emit_fn_prologue(struct context *ctx, struct str name) {
         "\t.p2align\t2\n"
         "_%.*s:\n"
         "\t.cfi_startproc\n"
-        "\tstp\tx29, x30, [sp, #-16]!\n"
-        "\tmov\tx29, sp"
+        "\tstp\tfp, lr, [sp, #-16]!\n"
+        "\tmov\tfp, sp"
         "\n",
         (int)name.len, name.ptr,
         (int)name.len, name.ptr
@@ -1254,7 +1254,7 @@ emit_fn_epilogue(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
     emit_comment(ctx, "fn epilogue");
     fprintf(ctx->output_file,
-        "\tldp\tx29, x30, [sp], #16\n"
+        "\tldp\tfp, lr, [sp], #16\n"
         "\tret\n"
         "\t.cfi_endproc\n");
 }
@@ -1263,7 +1263,7 @@ static void
 emit_fn_early_return(struct context *ctx) {
     if (ctx->is_dead_code) { return; }
     fprintf(ctx->output_file,
-        "\tldp\tx29, x30, [sp], #16\n"
+        "\tldp\tfp, lr, [sp], #16\n"
         "\tret\n");
 }
 

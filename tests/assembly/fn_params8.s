@@ -4,8 +4,8 @@
 	.p2align	2
 _sum:
 	.cfi_startproc
-	stp	x29, x30, [sp, #-16]!
-	mov	x29, sp
+	stp	fp, lr, [sp, #-16]!
+	mov	fp, sp
 	str	x0, [sp, #-16]!	; push
 	str	x1, [sp, #-16]!	; push
 	str	x2, [sp, #-16]!	; push
@@ -15,51 +15,51 @@ _sum:
 	str	x6, [sp, #-16]!	; push
 	str	x7, [sp, #-16]!	; push
 	; begin block
-	ldr	x11, [x29, #-16]	; load
+	ldr	x11, [fp, #-16]	; load
 	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-32]	; load
-	str	x11, [sp, #-16]!	; push
-	; binary op
-	ldr	x12, [sp], #16	; pop
-	ldr	x11, [sp], #16	; pop
-	add	x11, x11, x12
-	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-48]	; load
+	ldr	x11, [fp, #-32]	; load
 	str	x11, [sp, #-16]!	; push
 	; binary op
 	ldr	x12, [sp], #16	; pop
 	ldr	x11, [sp], #16	; pop
 	add	x11, x11, x12
 	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-64]	; load
+	ldr	x11, [fp, #-48]	; load
 	str	x11, [sp, #-16]!	; push
 	; binary op
 	ldr	x12, [sp], #16	; pop
 	ldr	x11, [sp], #16	; pop
 	add	x11, x11, x12
 	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-80]	; load
+	ldr	x11, [fp, #-64]	; load
 	str	x11, [sp, #-16]!	; push
 	; binary op
 	ldr	x12, [sp], #16	; pop
 	ldr	x11, [sp], #16	; pop
 	add	x11, x11, x12
 	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-96]	; load
+	ldr	x11, [fp, #-80]	; load
 	str	x11, [sp, #-16]!	; push
 	; binary op
 	ldr	x12, [sp], #16	; pop
 	ldr	x11, [sp], #16	; pop
 	add	x11, x11, x12
 	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-112]	; load
+	ldr	x11, [fp, #-96]	; load
 	str	x11, [sp, #-16]!	; push
 	; binary op
 	ldr	x12, [sp], #16	; pop
 	ldr	x11, [sp], #16	; pop
 	add	x11, x11, x12
 	str	x11, [sp, #-16]!	; push
-	ldr	x11, [x29, #-128]	; load
+	ldr	x11, [fp, #-112]	; load
+	str	x11, [sp, #-16]!	; push
+	; binary op
+	ldr	x12, [sp], #16	; pop
+	ldr	x11, [sp], #16	; pop
+	add	x11, x11, x12
+	str	x11, [sp, #-16]!	; push
+	ldr	x11, [fp, #-128]	; load
 	str	x11, [sp, #-16]!	; push
 	; binary op
 	ldr	x12, [sp], #16	; pop
@@ -71,7 +71,7 @@ _sum:
 	ldr	x0, [sp], #16	; pop
 	add	sp, sp, #128	; adjust stack pointer
 	; fn epilogue
-	ldp	x29, x30, [sp], #16
+	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
 	; fn prologue
@@ -79,8 +79,8 @@ _sum:
 	.p2align	2
 _main:
 	.cfi_startproc
-	stp	x29, x30, [sp, #-16]!
-	mov	x29, sp
+	stp	fp, lr, [sp, #-16]!
+	mov	fp, sp
 	; begin block
 	; begin fn call
 	ldr	x11, =0x1
@@ -115,7 +115,7 @@ _main:
 	; pop fn return
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
-	ldp	x29, x30, [sp], #16
+	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
 

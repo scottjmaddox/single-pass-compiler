@@ -119,8 +119,8 @@ reserved_number =
 - [x] early `return` with value
 - [x] test self recursion and mutual recursion
 - [x] `loop`, `continue`, and `break` with optional label and value
-- [ ] rename `fail_fn_decl_with_def` to `fail_fn_decl_without_def` and fix error message
-- [ ] use `fp` for `x29` and `lr` for `x30`
+- [x] rename `fail_fn_decl_with_def` to `fail_fn_decl_without_def` and fix error message
+- [x] use `fp` for `x29` and `lr` for `x30`
 - [ ] mutating assignment
   - [ ] test loop continue
 - [ ] array type, array literals, array copy assignment, array indexing, array index assignment

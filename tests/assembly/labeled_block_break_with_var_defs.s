@@ -4,8 +4,8 @@
 	.p2align	2
 _main:
 	.cfi_startproc
-	stp	x29, x30, [sp, #-16]!
-	mov	x29, sp
+	stp	fp, lr, [sp, #-16]!
+	mov	fp, sp
 	; begin block
 	; begin labeled block
 	; begin block
@@ -14,7 +14,7 @@ _main:
 	str	x11, [sp, #-16]!	; push
 	; end let
 	; begin if
-	ldr	x11, [x29, #-16]	; load
+	ldr	x11, [fp, #-16]	; load
 	str	x11, [sp, #-16]!	; push
 	ldr	x11, [sp], #16	; pop
 	cbz	x11, 2f
@@ -36,7 +36,7 @@ _main:
 	str	x11, [sp, #-16]!	; push
 	; end let
 	; begin if
-	ldr	x11, [x29, #-32]	; load
+	ldr	x11, [fp, #-32]	; load
 	str	x11, [sp, #-16]!	; push
 	ldr	x11, [sp], #16	; pop
 	cbz	x11, 4f
@@ -67,7 +67,7 @@ _main:
 	; pop fn return
 	mov	x0, #0	; clear
 	; fn epilogue
-	ldp	x29, x30, [sp], #16
+	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
 

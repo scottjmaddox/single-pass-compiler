@@ -4,8 +4,8 @@
 	.p2align	2
 _v:
 	.cfi_startproc
-	stp	x29, x30, [sp, #-16]!
-	mov	x29, sp
+	stp	fp, lr, [sp, #-16]!
+	mov	fp, sp
 	; begin block
 	; end block
 	ldr	x11, =0x0
@@ -13,7 +13,7 @@ _v:
 	; pop fn return
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
-	ldp	x29, x30, [sp], #16
+	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
 	; fn prologue
@@ -21,8 +21,8 @@ _v:
 	.p2align	2
 _main:
 	.cfi_startproc
-	stp	x29, x30, [sp, #-16]!
-	mov	x29, sp
+	stp	fp, lr, [sp, #-16]!
+	mov	fp, sp
 	; begin block
 	; begin fn call
 	bl	_v	; fn call
@@ -42,7 +42,7 @@ _main:
 	; pop fn return
 	ldr	x0, [sp], #16	; pop
 	; fn epilogue
-	ldp	x29, x30, [sp], #16
+	ldp	fp, lr, [sp], #16
 	ret
 	.cfi_endproc
 
